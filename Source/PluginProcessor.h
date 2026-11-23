@@ -40,6 +40,7 @@ public:
         juce::String name = "Init Saw", category = "Init", author = "", comment = "";
         juce::String layerNames[stratum::kLayers];
         juce::String macroNames[3] = { "Macro 1", "Macro 2", "Macro 3" };
+        juce::String userTable[stratum::kLayers][stratum::kOscs];   // wavetable file per oscillator, relative to the wavetable folder
     };
 
     stratum::APVTS apvts;
@@ -66,6 +67,14 @@ public:
     bool loadPresetFile (const juce::File& file);
     juce::Array<juce::File> listUserPresets() const;
 
+    // user wavetables: Serum-format .wav files in Documents/Stratum/Wavetables (the user creates the folder)
+    static juce::File getWavetableDirectory();
+    // Returns an error message, or an empty string when the table was loaded.
+    juce::String setUserWavetable (int layer, int osc, const juce::String& relativePath);
+    void clearUserWavetable (int layer, int osc);
+    juce::String getUserWavetableName (int layer, int osc) const { return info.userTable[layer][osc]; }
+    std::shared_ptr<stratum::UserTable> getUserWavetable (int layer, int osc) const { return bank.getShared (layer * stratum::kOscs + osc); }
+
 private:
     static stratum::APVTS::ParameterLayout createLayout();
     void applySnapshot (const stratum::EngineParams& snap, const PresetInfo& newInfo);
@@ -74,8 +83,11 @@ private:
     void restoreFromXml (juce::XmlElement& xml);
     void handleMidi (const juce::MidiMessage& m);
     void renderChunk (float* l, float* r, int start, int count);
+    juce::String loadWavetableIntoSlot (int slot, const juce::String& relativePath);
+    void reloadUserWavetables();
 
     std::unique_ptr<stratum::ParamBinder> binder;
+    stratum::UserWaveBank bank;
     std::unique_ptr<stratum::Engine> engine;
     double sampleRateHz = 44100.0;
     int maxBlock = 512;

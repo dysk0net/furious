@@ -224,6 +224,136 @@ int main()
         (void) rt;
     }
 
+
+    // 12. user wavetables (Serum-style .wav files)
+    {
+        auto put16 = [] (std::vector<uint8_t>& b, uint32_t v) { b.push_back ((uint8_t) (v & 255)); b.push_back ((uint8_t) ((v >> 8) & 255)); };
+        auto put32 = [] (std::vector<uint8_t>& b, uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back ((uint8_t) ((v >> (8 * i)) & 255)); };
+        auto tag = [] (std::vector<uint8_t>& b, const char* t) { b.insert (b.end(), t, t + 4); };
+        auto makeWav = [&] (const std::vector<float>& s, int bits, bool isFloat, const char* clm)
+        {
+            std::vector<uint8_t> b;
+            tag (b, "RIFF"); put32 (b, 0); tag (b, "WAVE");
+            tag (b, "fmt "); put32 (b, 16); put16 (b, isFloat ? 3 : 1); put16 (b, 1); put32 (b, 44100);
+            put32 (b, (uint32_t) (44100 * bits / 8)); put16 (b, (uint32_t) (bits / 8)); put16 (b, (uint32_t) bits);
+            if (clm != nullptr)
+            {
+                const size_t n = std::strlen (clm);
+                tag (b, "clm "); put32 (b, (uint32_t) n); b.insert (b.end(), clm, clm + n); if (n & 1) b.push_back (0);
+            }
+            tag (b, "data"); put32 (b, (uint32_t) (s.size() * (size_t) (bits / 8)));
+            for (float v : s)
+            {
+                if (isFloat) { uint32_t u; std::memcpy (&u, &v, 4); put32 (b, u); }
+                else if (bits == 16) put16 (b, (uint32_t) (uint16_t) (int16_t) std::lround (clampf (v, -1.0f, 1.0f) * 32767.0f));
+                else { int32_t q = (int32_t) std::lround (clampf (v, -1.0f, 1.0f) * 8388607.0f); b.push_back ((uint8_t) (q & 255)); b.push_back ((uint8_t) ((q >> 8) & 255)); b.push_back ((uint8_t) ((q >> 16) & 255)); }
+            }
+            const uint32_t riff = (uint32_t) b.size() - 8;
+            for (int i = 0; i < 4; ++i) b[(size_t) (4 + i)] = (uint8_t) ((riff >> (8 * i)) & 255);
+            return b;
+        };
+
+        // 8 frames of 2048 samples: frame 0 is the fundamental, frame 7 the third harmonic
+        std::vector<float> stack;
+        for (int f = 0; f < 8; ++f)
+            for (int n = 0; n < 2048; ++n)
+                stack.push_back (0.5f * std::sin (kTwoPi * (f == 7 ? 3.0f : 1.0f) * (float) n / 2048.0f));
+
+        std::string err;
+        auto wav = makeWav (stack, 32, true, "<!>2048 10000000 wavetable (test)");
+        WavData wd;
+        CHECK (parseWav (wav.data(), wav.size(), wd, err) && wd.samples.size() == stack.size() && wd.frameSizeHint == 2048,
+               "float WAV with a 'clm ' chunk parses");
+        auto tbl = buildUserTable (wd, "sine stack", err);
+        CHECK (tbl != nullptr && tbl->frames == 8, "wavetable has 8 frames");
+        float pk = 0.0f;
+        for (int i = 0; i < 4096; ++i) pk = std::max (pk, std::fabs (tbl->read (0, 0.0f, (float) i / 4096.0f)));
+        std::printf ("      (normalised peak %.3f)\n", pk);
+        CHECK (std::fabs (pk - 0.9f) < 0.02f, "table is normalised to a 0.9 peak and the transform keeps the amplitude");
+
+        auto w16 = makeWav (std::vector<float> (stack.begin(), stack.begin() + 3000), 16, false, nullptr);
+        auto t16 = loadUserTableFromMemory (w16.data(), w16.size(), "x", err);
+        CHECK (t16 != nullptr && t16->frames == 1, "16-bit WAV without a 'clm ' chunk uses 2048-sample frames");
+
+        auto w24 = makeWav (std::vector<float> (stack.begin(), stack.begin() + 4096), 24, false, "<!>1024 00000000 wavetable");
+        auto t24 = loadUserTableFromMemory (w24.data(), w24.size(), "x", err);
+        CHECK (t24 != nullptr && t24->frames == 4, "24-bit WAV honours a 1024-sample frame size from 'clm '");
+
+        std::vector<float> shortCycle (600);
+        for (int n = 0; n < 600; ++n) shortCycle[(size_t) n] = std::sin (kTwoPi * (float) n / 600.0f);
+        auto wsh = makeWav (shortCycle, 32, true, nullptr);
+        auto tsh = loadUserTableFromMemory (wsh.data(), wsh.size(), "x", err);
+        CHECK (tsh != nullptr && tsh->frames == 1, "a file shorter than one frame becomes a single-cycle table");
+
+        std::vector<float> big (2048 * 300, 0.25f);
+        for (int i = 0; i < (int) big.size(); ++i) big[(size_t) i] = std::sin ((float) i * 0.05f) * 0.3f;
+        auto wbig = makeWav (big, 32, true, nullptr);
+        auto tbig = loadUserTableFromMemory (wbig.data(), wbig.size(), "x", err);
+        CHECK (tbig != nullptr && tbig->frames == UserTable::kMaxFrames, "tables with more than 256 frames are thinned to 256");
+
+        // broken files must be rejected, never crash
+        std::vector<uint8_t> garbage (200); for (size_t i = 0; i < garbage.size(); ++i) garbage[i] = (uint8_t) (i * 37 + 11);
+        std::vector<uint8_t> headerOnly (wav.begin(), wav.begin() + 12);
+        std::vector<uint8_t> noData (wav.begin(), wav.begin() + 36);
+        std::vector<uint8_t> truncated (wav.begin(), wav.begin() + 70);
+        std::vector<uint8_t> empty;
+        bool rejected = loadUserTableFromMemory (garbage.data(), garbage.size(), "x", err) == nullptr
+                     && loadUserTableFromMemory (headerOnly.data(), headerOnly.size(), "x", err) == nullptr
+                     && loadUserTableFromMemory (noData.data(), noData.size(), "x", err) == nullptr
+                     && loadUserTableFromMemory (truncated.data(), truncated.size(), "x", err) == nullptr
+                     && loadUserTableFromMemory (nullptr, 0, "x", err) == nullptr;
+        CHECK (rejected, "garbage, empty, header-only and truncated files are rejected");
+
+        // play the table: pitch must be right at both ends of the morph range
+        auto crossings = [&] (std::shared_ptr<UserTable> table, float morph, int note)
+        {
+            std::unique_ptr<Engine> en (new Engine());
+            std::unique_ptr<EngineParams> ep (new EngineParams());
+            en->prepare (fs, 512);
+            LayerParams& P = ep->layer[0];
+            P.enabled = true;
+            P.osc[0].on = true; P.osc[0].unison = 1; P.osc[0].user = table.get(); P.osc[0].morph = morph;
+            P.filter.type = FltOff; P.env[0].attack = 0.001f; P.env[0].sustain = 1.0f;
+            en->noteOn (1, note, 1.0f, *ep);
+            std::vector<float> w;
+            renderSeconds (*en, *ep, 1.0f, fs, &w);
+            int c = 0;
+            for (size_t i = 2 * 22050 + 2; i + 2 < w.size(); i += 2) if (w[i - 2] <= 0.0f && w[i] > 0.0f) ++c;
+            return c;
+        };
+        int c0 = crossings (tbl, 0.0f, 69), c1 = crossings (tbl, 1.0f, 69);
+        std::printf ("      (A4 over 0.5 s: frame 0 -> %d cycles, frame 7 -> %d cycles)\n", c0, c1);
+        CHECK (std::abs (c0 - 220) <= 3, "user table plays at the right pitch (A4 = 220 cycles in 0.5 s)");
+        CHECK (std::abs (c1 - 660) <= 4, "morphing to the last frame gives the third harmonic");
+
+        // stability over the whole keyboard with a rich table and every mip level
+        bool finite = true;
+        for (int note : { 0, 12, 36, 60, 84, 108, 127 })
+        {
+            std::unique_ptr<Engine> en (new Engine());
+            std::unique_ptr<EngineParams> ep (new EngineParams());
+            en->prepare (fs, 512);
+            LayerParams& P = ep->layer[0];
+            P.enabled = true; P.osc[0].on = true; P.osc[0].unison = 5; P.osc[0].user = tbig.get(); P.osc[0].morph = 0.37f;
+            P.osc[0].fx = OfxPhaseMod; P.osc[0].fxAmt = 0.6f;
+            en->noteOn (1, note, 1.0f, *ep);
+            Stats st = renderSeconds (*en, *ep, 0.3f, fs);
+            finite = finite && st.bad == 0;
+        }
+        CHECK (finite, "user table stays finite from the lowest to the highest note");
+
+        // slot bank
+        UserWaveBank bank;
+        bank.assign (3, tbl); bank.assign (4, tbl);
+        bool bankOk = bank.get (3) == tbl.get() && bank.getShared (4) == tbl;
+        bank.clear (3);
+        bankOk = bankOk && bank.get (3) == nullptr && bank.get (4) == tbl.get() && bank.getShared (4) == tbl;
+        bank.assign (4, tsh);
+        bankOk = bankOk && bank.get (4) == tsh.get();
+        bank.collect();
+        CHECK (bankOk, "wavetable slot bank assigns, shares and replaces tables");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

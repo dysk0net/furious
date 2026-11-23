@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "FactoryPresets.h"
+#include <map>
 
 using namespace stratum;
 using namespace ui;
@@ -66,6 +67,8 @@ public:
         int table = (int) rawParam (proc.apvts, base + "tab");
         float morph = rawParam (proc.apvts, base + "morph"), phase = rawParam (proc.apvts, base + "pha");
         bool on = rawParam (proc.apvts, base + "on") > 0.5f;
+        const auto user = proc.getUserWavetable (layer, osc);
+        const juce::String userName = proc.getUserWavetableName (layer, osc);
 
         g.setColour (col::line.withAlpha (0.5f));
         g.drawHorizontalLine ((int) r.getCentreY(), r.getX(), r.getRight());
@@ -76,7 +79,8 @@ public:
         const float midY = r.getCentreY(), amp = r.getHeight() * 0.36f;
         for (int x = 0; x < n; ++x)
         {
-            float v = wt.read (table, 0, morph, std::fmod ((float) x / (float) n + phase, 1.0f));
+            const float ph = std::fmod ((float) x / (float) n + phase, 1.0f);
+            float v = user != nullptr ? user->read (2, morph, ph) : wt.read (table, 0, morph, ph);
             float y = midY - v * amp;
             if (x == 0) { p.startNewSubPath (r.getX(), y); fill.startNewSubPath (r.getX(), midY); fill.lineTo (r.getX(), y); }
             else { p.lineTo (r.getX() + (float) x, y); fill.lineTo (r.getX() + (float) x, y); }
@@ -86,23 +90,102 @@ public:
         g.setColour (c.withAlpha (0.22f)); g.fillPath (fill);
         g.setColour (c); g.strokePath (p, juce::PathStrokeType (1.4f));
 
-        g.setColour (c);
+        juce::String label;
+        if (user != nullptr)
+            label = "USER  |  " + juce::String (user->name) + "  (" + juce::String (user->frames) + (user->frames == 1 ? " frame)" : " frames)");
+        else if (userName.isNotEmpty())
+            label = "MISSING  |  " + userName + "  (playing " + juce::String (WaveTables::name (table)) + ")";
+        else
+            label = "TABLE  |  " + juce::String (table) + " : " + WaveTables::name (table);
+        g.setColour (userName.isNotEmpty() && user == nullptr ? col::pink : c);
         g.setFont (font (14.0f));
-        g.drawText ("TABLE  |  " + juce::String (table) + " : " + WaveTables::name (table), r.reduced (8.0f, 4.0f), juce::Justification::topLeft);
+        g.drawText (label, r.reduced (8.0f, 4.0f), juce::Justification::topLeft);
     }
 
     void mouseDown (const juce::MouseEvent&) override
     {
-        juce::PopupMenu m;
         const juce::String id = layerId (layer, juce::String ("o") + juce::String::charToString (kLetters[osc]) + "_tab");
-        int cur = (int) rawParam (proc.apvts, id);
-        for (int i = 0; i < WaveTables::T; ++i) m.addItem (i + 1, WaveTables::name (i), true, i == cur);
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this, id] (int r) { if (r > 0) setParamPlain (proc.apvts, id, (float) (r - 1)); });
+        const int cur = (int) rawParam (proc.apvts, id);
+        const juce::String curUser = proc.getUserWavetableName (layer, osc);
+
+        juce::PopupMenu m;
+        m.addSectionHeader ("Factory");
+        for (int i = 0; i < WaveTables::T; ++i) m.addItem (i + 1, WaveTables::name (i), true, curUser.isEmpty() && i == cur);
+
+        // user wavetables: Serum-format .wav files, subfolders become submenus
+        const auto root = StratumProcessor::getWavetableDirectory();
+        m.addSeparator();
+        m.addSectionHeader ("User wavetables");
+        picks.clear();
+        if (root.isDirectory())
+        {
+            int count = 0;
+            addFolder (m, root, root, curUser, 0, count);
+            if (count == 0) m.addItem (kInfoId, "No .wav files in the folder yet", false, false);
+            m.addSeparator();
+            m.addItem (kRevealId, "Open wavetable folder");
+        }
+        else
+        {
+            m.addItem (kInfoId, "Wavetable folder not found. Create it to add your own:", false, false);
+            m.addItem (kInfoId, root.getFullPathName(), false, false);
+        }
+
+        juce::Component::SafePointer<WaveDisplay> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe, id, root] (int r)
+        {
+            if (safe == nullptr || r <= 0 || r == kInfoId) return;
+            if (r == kRevealId) { root.revealToUser(); return; }
+            auto& p = safe->proc;
+            if (r < kFirstUserId)
+            {
+                p.clearUserWavetable (safe->layer, safe->osc);
+                setParamPlain (p.apvts, id, (float) (r - 1));
+                safe->repaint();
+                return;
+            }
+            const auto it = safe->picks.find (r);
+            if (it == safe->picks.end()) return;
+            const auto err = p.setUserWavetable (safe->layer, safe->osc, it->second);
+            if (err.isNotEmpty())
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Wavetable not loaded", it->second + "\n\n" + err);
+            safe->repaint();
+        });
     }
 
 private:
+    static constexpr int kFirstUserId = 1000, kInfoId = 9000, kRevealId = 9001, kMaxListed = 5000;
+
+    void addFolder (juce::PopupMenu& menu, const juce::File& dir, const juce::File& root, const juce::String& curUser, int depth, int& count)
+    {
+        auto byName = [] (const juce::File& a, const juce::File& b) { return a.getFileName().compareNatural (b.getFileName()) < 0; };
+        if (depth < 4)
+        {
+            auto subdirs = dir.findChildFiles (juce::File::findDirectories, false);
+            std::sort (subdirs.begin(), subdirs.end(), byName);
+            for (const auto& sub : subdirs)
+            {
+                juce::PopupMenu subMenu;
+                const int before = count;
+                addFolder (subMenu, sub, root, curUser, depth + 1, count);
+                if (count > before) menu.addSubMenu (sub.getFileName(), subMenu);
+            }
+        }
+        auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav;*.WAV");
+        std::sort (files.begin(), files.end(), byName);
+        for (const auto& f : files)
+        {
+            if (count >= kMaxListed) break;
+            const juce::String rel = f.getRelativePathFrom (root).replaceCharacter ('\\', '/');
+            const int itemId = kFirstUserId + count++;
+            picks[itemId] = rel;
+            menu.addItem (itemId, f.getFileNameWithoutExtension(), true, rel == curUser);
+        }
+    }
+
     StratumProcessor& proc;
     int osc;
+    std::map<int, juce::String> picks;
 };
 
 //==============================================================================

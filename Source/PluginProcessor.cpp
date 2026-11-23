@@ -105,6 +105,9 @@ void StratumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     if (buffer.getNumChannels() < 2) return;
 
     binder->pull (engineParams);
+    for (int l = 0; l < kLayers; ++l)
+        for (int o = 0; o < kOscs; ++o)
+            engineParams.layer[l].osc[o].user = bank.get (l * kOscs + o);
     engineParams.modWheel = modWheelValue.load();
     engineParams.pitchBend = pitchBendValue.load();
     if (panicRequested.exchange (false)) { engine->panic(); held.reset(); sustained.reset(); }
@@ -169,6 +172,8 @@ std::unique_ptr<juce::XmlElement> StratumProcessor::makeStateXml()
     {
         const LayerParams& P = engineParams.layer[l];
         c->setAttribute ("lname" + juce::String (l), info.layerNames[l]);
+        for (int o = 0; o < kOscs; ++o)
+            if (info.userTable[l][o].isNotEmpty()) c->setAttribute ("utab" + juce::String (l) + "_" + juce::String (o), info.userTable[l][o]);
         for (int k = 0; k < kSeqs; ++k) c->setAttribute ("seq" + juce::String (l) + "_" + juce::String (k), floatsToString (P.seq[k].steps, kMaxSteps));
         float on[kArpSteps];
         for (int s = 0; s < kArpSteps; ++s) on[s] = P.arp.stepOn[s] ? 1.0f : 0.0f;
@@ -205,6 +210,10 @@ void StratumProcessor::restoreFromXml (juce::XmlElement& xml)
     info.author = custom->getStringAttribute ("author");
     info.comment = custom->getStringAttribute ("comment");
     for (int k = 0; k < 3; ++k) info.macroNames[k] = custom->getStringAttribute ("macro" + juce::String (k + 1), "Macro " + juce::String (k + 1));
+    for (int l = 0; l < kLayers; ++l)
+        for (int o = 0; o < kOscs; ++o)
+            info.userTable[l][o] = custom->getStringAttribute ("utab" + juce::String (l) + "_" + juce::String (o));
+    reloadUserWavetables();
     for (int l = 0; l < kLayers; ++l)
     {
         LayerParams& P = engineParams.layer[l];
@@ -256,6 +265,7 @@ void StratumProcessor::applySnapshot (const EngineParams& snap, const PresetInfo
     copyCustomState (snap);
     binder->push (snap);
     info = newInfo;
+    reloadUserWavetables();
 }
 
 int StratumProcessor::getNumFactoryPresets() const { return (int) factoryPresets().size(); }
@@ -308,6 +318,64 @@ bool StratumProcessor::loadPresetFile (const juce::File& file)
 juce::Array<juce::File> StratumProcessor::listUserPresets() const
 {
     return getUserPresetDirectory().findChildFiles (juce::File::findFiles, true, "*.stpreset");
+}
+
+//==============================================================================
+// User wavetables
+juce::File StratumProcessor::getWavetableDirectory()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Stratum").getChildFile ("Wavetables");
+}
+
+juce::String StratumProcessor::loadWavetableIntoSlot (int slot, const juce::String& relativePath)
+{
+    const auto root = getWavetableDirectory();
+    const auto file = root.getChildFile (relativePath.replaceCharacter ('/', juce::File::getSeparatorChar()));
+    if (! file.existsAsFile() || ! file.isAChildOf (root)) return "The file was not found in the wavetable folder.";
+    if (file.getSize() > 128 * 1024 * 1024) return "The file is too large to be a wavetable.";
+
+    const std::string key = (file.getFullPathName() + "|" + juce::String (file.getSize()) + "|"
+                             + juce::String (file.getLastModificationTime().toMilliseconds())).toStdString();
+    if (auto cached = bank.lookup (key)) { bank.assign (slot, cached); return {}; }
+
+    juce::MemoryBlock bytes;
+    if (! file.loadFileAsData (bytes)) return "The file could not be read.";
+    std::string err;
+    auto table = loadUserTableFromMemory (bytes.getData(), bytes.getSize(), file.getFileNameWithoutExtension().toStdString(), err);
+    if (table == nullptr) return juce::String (err).substring (0, 1).toUpperCase() + juce::String (err).substring (1) + ".";
+
+    bank.remember (key, table);
+    bank.assign (slot, table);
+    return {};
+}
+
+juce::String StratumProcessor::setUserWavetable (int layer, int osc, const juce::String& relativePath)
+{
+    const auto err = loadWavetableIntoSlot (layer * kOscs + osc, relativePath);
+    if (err.isEmpty()) info.userTable[layer][osc] = relativePath;
+    bank.collect();
+    return err;
+}
+
+void StratumProcessor::clearUserWavetable (int layer, int osc)
+{
+    info.userTable[layer][osc] = juce::String();
+    bank.clear (layer * kOscs + osc);
+    bank.collect();
+}
+
+// Re-applies info.userTable to the audio engine (after a preset or project is loaded).
+// A file that cannot be found keeps its name, so the editor can show it as missing.
+void StratumProcessor::reloadUserWavetables()
+{
+    for (int l = 0; l < kLayers; ++l)
+        for (int o = 0; o < kOscs; ++o)
+        {
+            const int slot = l * kOscs + o;
+            if (info.userTable[l][o].isEmpty() || loadWavetableIntoSlot (slot, info.userTable[l][o]).isNotEmpty())
+                bank.clear (slot);
+        }
+    bank.collect();
 }
 
 juce::AudioProcessorEditor* StratumProcessor::createEditor() { return new StratumEditor (*this); }

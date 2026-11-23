@@ -5,6 +5,7 @@
 #include "Effects.h"
 #include "Filter.h"
 #include "Modulators.h"
+#include "UserWavetable.h"
 #include "Wavetable.h"
 #include <vector>
 
@@ -35,6 +36,7 @@ struct OscParams
     float bass = 0.0f, treble = 0.0f;
     int fx = OfxNone;
     float fxAmt = 0.0f, fxTune = 0.5f;
+    const UserTable* user = nullptr;   // set by the host every block; when set it replaces the factory table
 };
 
 //==============================================================================
@@ -456,7 +458,7 @@ private:
         // per-oscillator chunk setup
         struct OscCtx
         {
-            bool on; int table, mip, nu; float morph, vol, freq, detuneCents, norm, tubeNorm;
+            bool on; int table, mip, nu; const UserTable* user; float morph, vol, freq, detuneCents, norm, tubeNorm;
             float inc[kMaxUnison], gl[kMaxUnison], gr[kMaxUnison];
         };
         OscCtx oc[kOscs];
@@ -473,7 +475,9 @@ private:
             oc[o].morph = clampf (op.morph + tg[TgOscMorph1 + o], 0.0f, 1.0f);
             oc[o].vol = clampf (op.volume + tg[TgOscVol1 + o], 0.0f, 1.5f);
             oc[o].detuneCents = 75.0f * clampf (op.detune + tg[TgDetune], 0.0f, 1.0f);
-            oc[o].mip = WaveTables::mipFor (oc[o].freq * (1.0f + oc[o].detuneCents * 0.0006f) * (op.fx == OfxHardSync ? 1.0f + op.fxAmt * 7.0f : 1.0f), fs);
+            const float mipFreq = oc[o].freq * (1.0f + oc[o].detuneCents * 0.0006f) * (op.fx == OfxHardSync ? 1.0f + op.fxAmt * 7.0f : 1.0f);
+            oc[o].user = op.user;
+            oc[o].mip = op.user != nullptr ? UserTable::mipFor (mipFreq, fs) : WaveTables::mipFor (mipFreq, fs);
             oc[o].nu = std::max (1, std::min (op.unison, kMaxUnison));
             oc[o].norm = 1.0f / std::sqrt ((float) oc[o].nu);
             oc[o].tubeNorm = 1.0f / std::tanh (1.0f + op.fxAmt * 3.0f);
@@ -523,7 +527,8 @@ private:
                         case OfxRingMod: opp = frac (opp + inc * std::exp2 ((op.fxTune - 0.5f) * 6.0f + 1.0f)); break;
                         default: break;
                     }
-                    x = wt.read (oc[o].table, oc[o].mip, oc[o].morph, p);
+                    x = oc[o].user != nullptr ? oc[o].user->read (oc[o].mip, oc[o].morph, p)
+                                              : wt.read (oc[o].table, oc[o].mip, oc[o].morph, p);
                     switch (op.fx)
                     {
                         case OfxTube: x = std::tanh (x * (1.0f + op.fxAmt * 10.0f)) * oc[o].tubeNorm; break;

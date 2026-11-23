@@ -31,6 +31,29 @@ all code, wavetables and presets here were written from scratch.
 
 Every control is a host parameter, so everything can be automated.
 
+## Your own wavetables
+
+Stratum loads wavetables in the same `.wav` format Serum uses. Put them in your Documents folder, in a folder you
+create yourself (it is not created automatically):
+
+- Windows: `C:\Users\<you>\Documents\Stratum\Wavetables\`
+- macOS / Linux: `~/Documents/Stratum/Wavetables/`
+
+Click an oscillator's waveform display and choose a file under **User wavetables**. Subfolders become submenus,
+and the list is rescanned every time the menu opens, so new files show up without restarting. The **Morph**
+control scrolls through the frames of the table.
+
+| | |
+|---|---|
+| Files | `.wav`, 8/16/24/32-bit PCM or 32/64-bit float, mono (stereo files use the left channel) |
+| Frames | single cycles stacked one after another, 2048 samples each; an optional `clm ` chunk (`<!>1024 ...`) sets another frame length |
+| Limits | 256 frames (longer files are thinned evenly); a file shorter than one frame is used as a single cycle |
+| Processing | normalised to a common peak, DC removed, and rebuilt as band-limited copies so high notes do not alias |
+
+The chosen file is stored in presets and in the host project as a path relative to the wavetable folder, so a
+preset moved to another computer needs the same file in the same place. If it is missing, the display shows
+**MISSING** in red and the oscillator falls back to its factory table.
+
 ## Building
 
 Requires CMake 3.22+ and a C++17 compiler. JUCE 8.0.8 is downloaded automatically.

@@ -12,7 +12,7 @@ namespace col
 {
     const juce::Colour bg (0xff171925), panel (0xff222536), panelHi (0xff2d3147), line (0xff3a3f57),
                        text (0xffdfe1ea), dim (0xff8a90a6), orange (0xffffb36b), blue (0xff52a8ff),
-                       pink (0xffff5f8a), hdrTop (0xffb7bac5), hdrBot (0xff8f93a2), hdrText (0xff1c1e29);
+                       pink (0xffff5f8a), hdrTop (0xff9a9ead), hdrBot (0xff767a8b), hdrText (0xff1c1e29);
 }
 inline juce::Font font (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
 

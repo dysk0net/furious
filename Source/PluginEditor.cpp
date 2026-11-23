@@ -636,12 +636,6 @@ public:
     void paint (juce::Graphics& g) override
     {
         panelBackground (g, getLocalBounds(), "EFFECTS");
-        if (shownType == FxNone || shownType != FxTrancegate)
-        {
-            g.setColour (col::dim); g.setFont (font (13.0f));
-            g.drawFittedText (shownType == FxNone ? "Choose an effect type for this slot." : "Tweak the controls on the left. Reverb, delay, chorus, phaser, distortion, bitcrush, trancegate, compressor, sidechain and balancer are available in every slot.",
-                              getWidth() - 470, 60, 440, 80, juce::Justification::topLeft, 3);
-        }
     }
 
     void resized() override
@@ -994,7 +988,7 @@ struct StratumEditor::Header : public juce::Component
         g.drawText ("0.1.0  |  VST3  |  64-bit", 18, 50, 220, 16, juce::Justification::centredLeft);
 
         auto disp = displayBounds();
-        g.setColour (juce::Colour (0xff6d7184)); g.fillRoundedRectangle (disp.toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xff5a5e70)); g.fillRoundedRectangle (disp.toFloat(), 4.0f);
         g.setColour (col::hdrText);
         g.setFont (font (18.0f));
         g.drawText (proc.info.category.isEmpty() ? "Preset" : proc.info.category, disp.withTrimmedLeft (14).withWidth (130), juce::Justification::centredLeft);

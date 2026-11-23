@@ -53,6 +53,8 @@ public:
     std::atomic<bool> panicRequested { false };
 
     float getLayerPeak (int l) const { return engine ? engine->layerPeak (l) : 0.0f; }
+    int getSeqPosition (int layer, int seq) const { return engine ? engine->seqPosition (layer, seq) : -1; }
+    int getArpPosition (int layer) const { return engine ? engine->arpPosition (layer) : -1; }
     float getOutputPeak() const { return engine ? engine->outPeak() : 0.0f; }
     int getVoiceCount() const { return voiceCount.load(); }
 

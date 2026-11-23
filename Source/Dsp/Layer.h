@@ -179,6 +179,8 @@ public:
     void allNotesOff (bool immediate = false)
     {
         arpHeld.clear(); arpNote = -1; monoStack.clear();
+        for (auto& s : seqPos_) s.store (-1, std::memory_order_relaxed);
+        arpPos_.store (-1, std::memory_order_relaxed);
         for (auto& v : voices)
         {
             if (immediate) v.active = false;
@@ -187,6 +189,12 @@ public:
     }
 
     int activeVoices() const { int c = 0; for (auto& v : voices) c += v.active ? 1 : 0; return c; }
+
+    LayerEngine() { for (auto& s : seqPos_) s.store (-1); arpPos_.store (-1); }
+
+    // What the editor shows as the playhead: the step each sequence / the arpeggiator is on right now, or -1 when idle.
+    int seqPosition (int k) const { return seqPos_[k].load (std::memory_order_relaxed); }
+    int arpPosition() const { return arpPos_.load (std::memory_order_relaxed); }
 
     // Adds this layer's output into L/R (does not clear).
     void render (float* L, float* R, int n, const LayerParams& P, const LayerContext& ctx)
@@ -208,6 +216,8 @@ public:
             for (auto& v : voices)
                 if (v.active) renderVoice (v, scratchL.data() + pos, scratchR.data() + pos, m, P, ctx);
         }
+
+        publishPositions (P);
 
         // effect rack
         Transport tpBlock = ctx.transport;
@@ -250,6 +260,8 @@ private:
     Lfo gLfo[kLfos];
     StepSeq gSeq[kSeqs];
     float gLfoVal[kLfos] = {}, gSeqVal[kSeqs] = {};
+    std::atomic<int> seqPos_[kSeqs];
+    std::atomic<int> arpPos_;
     std::vector<float> scratchL, scratchR;
     uint64_t ageCounter = 0;
     uint32_t seedCounter = 1;
@@ -351,6 +363,21 @@ private:
     }
 
     //--------------------------------------------------------------------------
+    // Sequences follow the newest sounding note, or the shared clock when they are not set to retrigger.
+    void publishPositions (const LayerParams& P)
+    {
+        const Voice* newest = nullptr;
+        for (const auto& v : voices)
+            if (v.active && (newest == nullptr || v.age > newest->age)) newest = &v;
+        for (int k = 0; k < kSeqs; ++k)
+        {
+            int step = -1;
+            if (newest != nullptr) step = P.seq[k].retrigger ? newest->seq[k].stepIndex (P.seq[k]) : gSeq[k].stepIndex (P.seq[k]);
+            seqPos_[k].store (step, std::memory_order_relaxed);
+        }
+        if (! P.arp.on || arpHeld.empty()) arpPos_.store (-1, std::memory_order_relaxed);
+    }
+
     void stopArpNote()
     {
         if (arpNote >= 0)
@@ -378,6 +405,7 @@ private:
 
         int s = arpStep % len;
         arpStep = (arpStep + 1) % len;
+        arpPos_.store (s, std::memory_order_relaxed);   // shown even when the step itself is switched off
         if (! A.stepOn[s]) return;
 
         std::vector<Held> pool = arpHeld;
@@ -619,6 +647,8 @@ public:
     void panic() { for (auto& l : layers) l.allNotesOff (true); }
 
     int totalVoices() const { int c = 0; for (auto& l : layers) c += l.activeVoices(); return c; }
+    int seqPosition (int layer, int seq) const { return layers[layer].seqPosition (seq); }
+    int arpPosition (int layer) const { return layers[layer].arpPosition(); }
     float layerPeak (int l) const { return peaks[l]; }
     float outPeak() const { return outPk; }
 

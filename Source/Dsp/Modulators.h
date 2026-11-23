@@ -168,6 +168,13 @@ struct StepSeq
 
     void reset() { pos = 0.0f; value = 0.0f; finished = false; }
 
+    // The step that is playing right now.
+    int stepIndex (const SeqParams& p) const
+    {
+        const int len = std::max (1, std::min (p.length, kMaxSteps));
+        return std::min (std::max ((int) pos, 0), len - 1);
+    }
+
     float advance (float dt, const SeqParams& p, double bpm)
     {
         float stepsPerSec = p.sync ? (float) (bpm / 60.0) * kDivCyclesPerBeat[(int) clampf ((float) p.syncDiv, 0, kNumDivs - 1)] : p.rateHz;

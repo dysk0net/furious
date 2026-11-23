@@ -416,6 +416,8 @@ public:
                 g.setColour (i >= loop ? col::orange : col::orange.withAlpha (0.4f));
                 g.fillRect (bar.withHeight (std::max (2.0f, bar.getHeight())));
             }
+            const int playing = proc.getSeqPosition (layer, index);
+            if (playing >= 0 && playing < len) drawPlayhead (g, inner, playing, sw);
             g.setColour (col::orange); g.drawText ("Sequence " + l + "   (drag to draw steps)", getLocalBounds().reduced (8, 3), juce::Justification::topLeft);
         }
         else
@@ -434,6 +436,8 @@ public:
                 float my = zone.getCentreY() - t * zone.getHeight() * 0.5f;
                 g.fillRect (zone.getX(), std::min (my, zone.getCentreY()), zone.getWidth(), std::max (2.0f, std::fabs (my - zone.getCentreY())));
             }
+            const int playing = proc.getArpPosition (layer);
+            if (playing >= 0 && playing < len) drawPlayhead (g, inner, playing, sw);
             g.setColour (col::orange); g.drawText ("Arpeggiator   click: step on/off   drag lower area: transpose", getLocalBounds().reduced (8, 3), juce::Justification::topLeft);
         }
     }
@@ -442,6 +446,13 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override { edit (e, false); }
 
 private:
+    // thin white outline around the step that is playing right now
+    static void drawPlayhead (juce::Graphics& g, juce::Rectangle<float> inner, int step, float stepWidth)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.9f));
+        g.drawRect (juce::Rectangle<float> (inner.getX() + (float) step * stepWidth + 0.5f, inner.getY(), stepWidth - 1.0f, inner.getHeight()), 1.0f);
+    }
+
     StratumProcessor& proc;
     bool dragging = false;
     bool paintOn = true;

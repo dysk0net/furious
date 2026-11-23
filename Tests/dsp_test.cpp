@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <set>
 #include <vector>
 
 using namespace stratum;
@@ -352,6 +353,60 @@ int main()
         bankOk = bankOk && bank.get (4) == tsh.get();
         bank.collect();
         CHECK (bankOk, "wavetable slot bank assigns, shares and replaces tables");
+    }
+
+
+    // 13. playback positions reported to the editor (sequence and arpeggiator playheads)
+    {
+        std::unique_ptr<Engine> en (new Engine());
+        std::unique_ptr<EngineParams> ep (new EngineParams());
+        en->prepare (fs, 512);
+        LayerParams& P = ep->layer[0];
+        P.enabled = true; P.osc[0].on = true;
+        P.seq[0].sync = false; P.seq[0].rateHz = 8.0f; P.seq[0].length = 4;
+        std::vector<float> L (512), R (512);
+        Transport tp;
+        auto run = [&] (int blocks, std::set<int>& seqSeen, std::set<int>& arpSeen)
+        {
+            for (int b = 0; b < blocks; ++b)
+            {
+                en->render (L.data(), R.data(), 512, *ep, tp);
+                tp.ppq += 512.0 * tp.bpm / 60.0 / fs;
+                seqSeen.insert (en->seqPosition (0, 0));
+                arpSeen.insert (en->arpPosition (0));
+            }
+        };
+        const std::set<int> allFour = { 0, 1, 2, 3 };
+        std::set<int> a, b2;
+        run (2, a, b2);
+        CHECK (a == std::set<int> { -1 } && b2 == std::set<int> { -1 }, "no playhead is reported while nothing is playing");
+
+        en->noteOn (1, 60, 1.0f, *ep);
+        a.clear(); b2.clear(); run (100, a, b2);
+        std::printf ("      (sequence steps seen while playing:");
+        for (int s : a) std::printf (" %d", s);
+        std::printf (")\n");
+        CHECK (a == allFour, "sequence playhead visits every step of a 4-step sequence");
+
+        P.seq[0].retrigger = false;                                  // shared clock
+        a.clear(); b2.clear(); run (100, a, b2);
+        CHECK (a == allFour, "playhead also works for a sequence that does not retrigger");
+
+        en->panic();
+        a.clear(); b2.clear(); run (2, a, b2);
+        CHECK (a == std::set<int> { -1 }, "playhead clears after panic");
+
+        P.arp.on = true; P.arp.length = 4; P.arp.div = 6; P.arp.stepOn[2] = false;
+        en->noteOn (1, 60, 1.0f, *ep);
+        a.clear(); b2.clear(); run (100, a, b2);
+        std::printf ("      (arp steps seen while playing:");
+        for (int s : b2) std::printf (" %d", s);
+        std::printf (")\n");
+        CHECK (b2 == allFour, "arp playhead visits every step, including a switched-off one");
+
+        en->noteOff (1, 60, *ep);
+        a.clear(); b2.clear(); run (3, a, b2);
+        CHECK (b2 == std::set<int> { -1 }, "arp playhead clears when the keys are released");
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");

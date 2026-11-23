@@ -20,6 +20,9 @@ all code, wavetables and presets here were written from scratch.
   (bend, phase, fade, tempo sync), 4 step sequencers (32 steps, loop point, oneshot, smoothing)
 - 8-slot modulation matrix per layer: 19 sources x 22 targets, bipolar amounts, 3 macros
 - Arpeggiator: 16-step pattern with per-step on/off and transpose, 6 orders, 1-4 octaves, tempo sync
+- Scale lock for the arpeggiator and for each sequencer (when it drives an oscillator's pitch): Major, Minor,
+  Phrygian, Blues, Phrygian Dominant, Double Harmonic, Hungarian Minor, Hirajoshi and Whole Tone, in any key.
+  Notes snap to the nearest scale note; a note exactly halfway between two goes to the lower one
 - Mono legato with glide, voice limit, MIDI channel and key range per layer
 - 7-slot effect rack: reverb, delay, chorus, phaser, distortion, bitcrusher, trancegate (2 x 32 steps),
   compressor, sidechain ducker, balancer

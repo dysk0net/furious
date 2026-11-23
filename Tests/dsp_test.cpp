@@ -409,6 +409,84 @@ int main()
         CHECK (b2 == std::set<int> { -1 }, "arp playhead clears when the keys are released");
     }
 
+
+    // 14. scales: the snapping rule, then audio checks for a sequencer routed to pitch and for the arp
+    {
+        auto close = [] (float a, float b) { return std::fabs (a - b) < 1.0e-4f; };
+        const bool rules = close (quantizeToScale (61.0f, 1, 0), 60.0f)       // C# in C major: halfway, goes down
+                        && close (quantizeToScale (63.0f, 1, 0), 62.0f)
+                        && close (quantizeToScale (66.0f, 1, 0), 65.0f)
+                        && close (quantizeToScale (71.0f, 1, 0), 71.0f)       // already in the scale
+                        && close (quantizeToScale (63.0f, 2, 2), 62.0f)       // D# in D minor
+                        && close (quantizeToScale (63.4f, 0, 0), 63.4f);      // "No scale" leaves notes alone
+        CHECK (rules, "notes snap to the nearest scale note, halfway goes down, 'No scale' changes nothing");
+
+        bool inScale = true, nearby = true, idem = true;
+        for (int sc = 1; sc < kNumScales; ++sc)
+            for (int key = 0; key < 12; ++key)
+                for (int n = 0; n < 128; ++n)
+                {
+                    const float q = quantizeToScale ((float) n, sc, key);
+                    const ScaleDef& d = scaleDef (sc);
+                    const int pc = (((int) std::lround (q) - key) % 12 + 12) % 12;
+                    bool member = false;
+                    for (int i = 0; i < d.count; ++i) member = member || d.degrees[i] == pc;
+                    inScale = inScale && member;
+                    nearby = nearby && std::fabs (q - (float) n) <= 2.0f + 1.0e-4f;
+                    idem = idem && close (quantizeToScale (q, sc, key), q);
+                }
+        CHECK (inScale && nearby && idem, "all 9 scales in all 12 keys: results are in the scale, within 2 semitones, and stable");
+
+        // helper: cycles of a sine counted over the second half of a one-second render
+        auto cycles = [&] (EngineParams& ep, int note)
+        {
+            std::unique_ptr<Engine> en (new Engine());
+            en->prepare (fs, 512);
+            en->noteOn (1, note, 1.0f, ep);
+            std::vector<float> w;
+            renderSeconds (*en, ep, 1.0f, fs, &w);
+            int c = 0;
+            for (size_t i = 2 * 22050 + 2; i + 2 < w.size(); i += 2) if (w[i - 2] <= 0.0f && w[i] > 0.0f) ++c;
+            return c;
+        };
+        auto setup = [] (EngineParams& ep)
+        {
+            LayerParams& P = ep.layer[0];
+            P.enabled = true; P.osc[0].on = true; P.osc[0].unison = 1; P.osc[0].table = 0; P.osc[0].morph = 0.0f;
+            P.filter.type = FltOff; P.env[0].attack = 0.001f; P.env[0].sustain = 1.0f; P.env[0].release = 0.01f;
+        };
+
+        // sequence A raises the pitch by 3 semitones: from C that is D# (Eb)
+        std::unique_ptr<EngineParams> sp (new EngineParams());
+        setup (*sp);
+        LayerParams& S = sp->layer[0];
+        S.mod[0] = { true, SrcSeq1, TgOscPitch1, 1.0f };
+        S.seq[0].sync = false; S.seq[0].rateHz = 1.0f; S.seq[0].length = 2;
+        for (int i = 0; i < kMaxSteps; ++i) S.seq[0].steps[i] = 3.0f / 24.0f;
+        const int none = cycles (*sp, 60);                    // 311.1 Hz -> about 156 cycles
+        S.seq[0].scale = 1; S.seq[0].key = 0;                 // C major has no Eb, so it drops to D
+        const int major = cycles (*sp, 60);                   // 293.7 Hz -> about 147
+        S.seq[0].scale = 2;                                   // C minor has Eb
+        const int minor = cycles (*sp, 60);
+        std::printf ("      (sequence +3 semitones from C: no scale %d, C major %d, C minor %d cycles)\n", none, major, minor);
+        CHECK (std::abs (none - 156) <= 2 && std::abs (major - 147) <= 2 && std::abs (minor - 156) <= 2,
+               "a sequence routed to pitch snaps to the chosen scale");
+
+        // the arp: a held C# in C major plays C; a +3 transpose from C lands on D
+        std::unique_ptr<EngineParams> ap (new EngineParams());
+        setup (*ap);
+        LayerParams& A = ap->layer[0];
+        A.arp.on = true; A.arp.gateLength = 1.0f;
+        const int aNone = cycles (*ap, 61);                   // 277.2 Hz -> about 139
+        A.arp.scale = 1; A.arp.key = 0;
+        const int aMajor = cycles (*ap, 61);                  // C -> 261.6 Hz -> about 131
+        for (int i = 0; i < kArpSteps; ++i) A.arp.tune[i] = 3.0f;
+        const int aTuned = cycles (*ap, 60);                  // C + 3 = Eb -> D 293.7 Hz -> about 147
+        std::printf ("      (arp: held C# no scale %d, C major %d; C +3 in C major %d cycles)\n", aNone, aMajor, aTuned);
+        CHECK (std::abs (aNone - 139) <= 3 && std::abs (aMajor - 131) <= 3 && std::abs (aTuned - 147) <= 3,
+               "the arpeggiator snaps its notes to the chosen scale");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

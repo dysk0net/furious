@@ -137,6 +137,8 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
     static const juce::StringArray arpOrders = makeChoices (ArpNumOrders, arpOrderName);
     static const juce::StringArray lfoWaves = makeChoices (7, lfoWaveName);
     static const juce::StringArray mixOrders = makeChoices (2, mixOrderName);
+    static const juce::StringArray scaleNames = makeChoices (kNumScales, scaleName);
+    static const juce::StringArray keyNames = makeChoices (12, keyName);
 
     const juce::String L = "L" + juce::String (layer + 1);
     B.setPrefix (L + "_", L + " ");
@@ -242,6 +244,8 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("lvl", "Level", s.level, 0.0f, 1.0f);
         B.f ("smo", "Smooth", s.smooth, 0.0f, 1.0f);
         B.f ("shf", "Shuffle", s.shuffle, 0.0f, 1.0f);
+        B.c ("scl", "Scale", s.scale, scaleNames);
+        B.c ("key", "Key", s.key, keyNames);
     }
     for (int k = 0; k < kModSlots; ++k)
     {
@@ -270,6 +274,8 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
     B.i ("len", "Length", P.arp.length, 1, kArpSteps);
     B.f ("gate", "Gate", P.arp.gateLength, 0.05f, 1.0f);
     B.f ("shf", "Shuffle", P.arp.shuffle, 0.0f, 1.0f);
+    B.c ("scl", "Scale", P.arp.scale, scaleNames);
+    B.c ("key", "Key", P.arp.key, keyNames);
 
     for (int k = 0; k < kFxSlots; ++k)
     {

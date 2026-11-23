@@ -157,6 +157,7 @@ struct SeqParams
     float level = 1.0f;
     float smooth = 0.0f;
     float shuffle = 0.0f;
+    int scale = 0, key = 0;        // scale lock for pitch (see Scales.h); 0 = off
     float steps[kMaxSteps] = {};   // -1..1
 };
 

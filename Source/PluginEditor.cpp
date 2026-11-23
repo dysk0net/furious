@@ -520,7 +520,7 @@ public:
         ab->onClick = [this] { select (3, 0); };
 
         for (int i = 0; i < 10; ++i) knobs[i] = &R.make<Knob> (A, "", "e" "A_vel");
-        for (int i = 0; i < 3; ++i) combos[i] = &R.make<Combo> (A, juce::StringArray ("-"), "e" "A_vel");
+        for (int i = 0; i < 4; ++i) combos[i] = &R.make<Combo> (A, juce::StringArray ("-"), "e" "A_vel");
         for (int i = 0; i < 3; ++i) toggles[i] = &R.make<Toggle> (A, "", "e" "A_vel");
         for (auto* c : R.ctls) all.push_back (c);
         randomBtn.setButtonText ("Random");
@@ -565,9 +565,9 @@ public:
         for (int i = 0; i < 10; ++i) knobs[i]->setBounds (kr.getX() + i * 56, kr.getY(), 56, kr.getHeight());
         lower.removeFromLeft (8);
         int cy = lower.getY() + 2;
-        for (int i = 0; i < 3; ++i) combos[i]->setBounds (lower.getX(), cy + i * 24, 116, 22);
-        randomBtn.setBounds (lower.getX(), cy + visibleCombos * 24, 116, 22);
-        for (int i = 0; i < 3; ++i) toggles[i]->setBounds (lower.getX() + 124, cy + i * 24, 110, 22);
+        for (int i = 0; i < 4; ++i) combos[i]->setBounds (lower.getX() + comboPos[i].x, cy + comboPos[i].row * 24, comboPos[i].w, 22);
+        randomBtn.setBounds (lower.getX() + randomPos.x, cy + randomPos.row * 24, randomPos.w, 22);
+        for (int i = 0; i < 3; ++i) toggles[i]->setBounds (lower.getX() + togglePos[i].x, cy + togglePos[i].row * 24, togglePos[i].w, 22);
     }
 
     ModDisplay display;
@@ -617,30 +617,42 @@ private:
         {
             pre = "s" + l + "_";
             k = { { "Level", "lvl" }, { "Rate", "rate" }, { "Smooth", "smo" }, { "Shuffle", "shf" }, { "Length", "len" }, { "Loop", "loop" } };
-            c = { { "Sync Div", "div" } };
+            c = { { "Sync Div", "div" }, { "Scale", "scl" }, { "Key", "key" } };
             t = { { "Retrigger", "rtg" }, { "BPM Sync", "sync" }, { "Oneshot", "one" } };
-            comboItems = { names (kNumDivs, divName) };
+            comboItems = { names (kNumDivs, divName), names (kNumScales, scaleName), names (12, keyName) };
         }
         else
         {
             pre = "a_";
             k = { { "Octaves", "oct" }, { "Length", "len" }, { "Gate", "gate" }, { "Shuffle", "shf" } };
-            c = { { "Order", "ord" }, { "Rate", "div" } };
+            c = { { "Order", "ord" }, { "Rate", "div" }, { "Scale", "scl" }, { "Key", "key" } };
             t = { { "Arp On", "on" } };
-            comboItems = { names (ArpNumOrders, arpOrderName), names (kNumDivs, divName) };
+            comboItems = { names (ArpNumOrders, arpOrderName), names (kNumDivs, divName), names (kNumScales, scaleName), names (12, keyName) };
         }
         visibleKnobs = (int) k.size();
-        visibleCombos = (int) c.size();
+        // where each control sits in the strip under the knobs (x offset, row, width)
+        for (int i = 0; i < 4; ++i) comboPos[i] = { 0, i % 3, 116 };
+        for (int i = 0; i < 3; ++i) togglePos[i] = { 124, i, 110 };
+        randomPos = { 242, 0, 66 };
+        if (modeGroup == 3)   // arpeggiator: order/rate in one column, scale/key in the next, switch to the right
+        {
+            comboPos[0] = { 0, 0, 116 }; comboPos[1] = { 0, 1, 116 };
+            comboPos[2] = { 124, 0, 116 }; comboPos[3] = { 124, 1, 116 };
+            togglePos[0] = { 248, 0, 110 };
+        }
         randomBtn.setVisible (modeGroup == 2);
         for (int i = 0; i < 10; ++i)
         {
             knobs[i]->setVisible (i < (int) k.size());
             if (i < (int) k.size()) { knobs[i]->setLabel (k[(size_t) i].label); knobs[i]->setSuffix (pre + k[(size_t) i].suffix); }
         }
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 4; ++i)
         {
             combos[i]->setVisible (i < (int) c.size());
             if (i < (int) c.size()) { combos[i]->setItems (comboItems[(size_t) i]); combos[i]->setSuffix (pre + c[(size_t) i].suffix); }
+        }
+        for (int i = 0; i < 3; ++i)
+        {
             toggles[i]->setVisible (i < (int) t.size());
             if (i < (int) t.size()) { toggles[i]->button.setButtonText (t[(size_t) i].label); toggles[i]->setSuffix (pre + t[(size_t) i].suffix); }
         }
@@ -652,9 +664,11 @@ private:
     juce::OwnedArray<juce::TextButton> buttons;
     juce::TextButton randomBtn;
     Knob* knobs[10];
-    Combo* combos[3];
+    Combo* combos[4];
     Toggle* toggles[3];
-    int layer = 0, modeGroup = 0, modeIdx = 0, visibleKnobs = 10, visibleCombos = 0;
+    int layer = 0, modeGroup = 0, modeIdx = 0, visibleKnobs = 10;
+    struct Pos { int x = 0, row = 0, w = 116; };
+    Pos comboPos[4], togglePos[3], randomPos;
     int groupX[3] = { 78, 252, 454 };
 };
 

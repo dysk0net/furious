@@ -5,6 +5,7 @@
 #include "Effects.h"
 #include "Filter.h"
 #include "Modulators.h"
+#include "Scales.h"
 #include "UserWavetable.h"
 #include "Wavetable.h"
 #include <vector>
@@ -101,6 +102,7 @@ struct ArpParams
     int length = 16;
     float gateLength = 0.6f;
     float shuffle = 0.0f;
+    int scale = 0, key = 0;   // scale lock (see Scales.h); 0 = off
     bool stepOn[kArpSteps];
     float tune[kArpSteps] = {};
     ArpParams() { for (auto& s : stepOn) s = true; }
@@ -424,7 +426,8 @@ private:
             default: idx = (int) (arpRng.next01() * (float) n) % n; break;
         }
         ++arpCounter;
-        int note = (int) clampf ((float) full[(size_t) idx].note + A.tune[s], 0.0f, 127.0f);
+        const float wanted = quantizeToScale ((float) full[(size_t) idx].note + A.tune[s], A.scale, A.key);
+        int note = (int) std::lround (clampf (wanted, 0.0f, 127.0f));
         arpNote = note;
         arpGateOpen = true;
         startNote (note, full[(size_t) idx].vel, P);
@@ -460,7 +463,16 @@ private:
         float tg[TgNum] = {};
         for (const auto& slot : P.mod)
             if (slot.on && slot.source != SrcNone && slot.target != TgNone)
-                tg[slot.target] += src[slot.source] * slot.amount;
+            {
+                float amount = src[slot.source] * slot.amount;
+                // A sequence with a scale chosen snaps the pitch it produces to that scale (1.0 = 24 semitones).
+                if (slot.source >= SrcSeq1 && slot.source <= SrcSeq4 && slot.target >= TgOscPitch1 && slot.target <= TgOscPitch3)
+                {
+                    const SeqParams& sq = P.seq[slot.source - SrcSeq1];
+                    if (sq.scale > 0) amount = (quantizeToScale (v.noteF + amount * 24.0f, sq.scale, sq.key) - v.noteF) / 24.0f;
+                }
+                tg[slot.target] += amount;
+            }
 
         // retire finished voices
         if (v.released && ! v.env[0].active()) { v.active = false; return; }

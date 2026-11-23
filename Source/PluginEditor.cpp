@@ -440,22 +440,25 @@ public:
     {
         panelBackground (g, getLocalBounds());
         g.setColour (col::text); g.setFont (font (13.0f, true));
-        g.drawText ("Envelope", 8, 4, 70, 18, juce::Justification::centredLeft);
-        g.drawText ("LFO", 8 + 4 * 30 + 80, 4, 40, 18, juce::Justification::centredLeft);
-        g.drawText ("Sequence", 8 + 8 * 30 + 150, 4, 70, 18, juce::Justification::centredLeft);
+        const char* labels[3] = { "Envelope", "LFO", "Sequence" };
+        for (int i = 0; i < 3; ++i)
+            g.drawText (labels[i], groupX[i] - 74, 6, 70, 18, juce::Justification::centredRight);
     }
 
     void resized() override
     {
         auto r = getLocalBounds().reduced (6);
         auto top = r.removeFromTop (22);
-        int x = top.getX() + 70;
+        int x = top.getX() + 72;
+        groupX[0] = x;
         for (int k = 0; k < 4; ++k) buttons[k]->setBounds (x + k * 30, top.getY(), 28, 22);
-        x += 4 * 30 + 12 + 30;
+        x += 4 * 30 + 10 + 44;
+        groupX[1] = x;
         for (int k = 0; k < 4; ++k) buttons[4 + k]->setBounds (x + k * 30, top.getY(), 28, 22);
-        x += 4 * 30 + 12 + 70;
+        x += 4 * 30 + 10 + 72;
+        groupX[2] = x;
         for (int k = 0; k < 4; ++k) buttons[8 + k]->setBounds (x + k * 30, top.getY(), 28, 22);
-        x += 4 * 30 + 24;
+        x += 4 * 30 + 20;
         buttons[12]->setBounds (x, top.getY(), 44, 22);
         r.removeFromTop (3);
         auto lower = r.removeFromBottom (74);
@@ -541,6 +544,7 @@ private:
     Combo* combos[3];
     Toggle* toggles[3];
     int layer = 0, modeGroup = 0, modeIdx = 0, visibleKnobs = 10;
+    int groupX[3] = { 78, 252, 454 };
 };
 
 //==============================================================================

@@ -1,0 +1,89 @@
+#pragma once
+#include <JuceHeader.h>
+#include "Params.h"
+#include <bitset>
+#include <memory>
+
+class StratumProcessor : public juce::AudioProcessor
+{
+public:
+    StratumProcessor();
+    ~StratumProcessor() override;
+
+    //==============================================================================
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override {}
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+
+    const juce::String getName() const override { return "Stratum"; }
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 4.0; }
+
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+
+    void getStateInformation (juce::MemoryBlock& destData) override;
+    void setStateInformation (const void* data, int sizeInBytes) override;
+
+    //==============================================================================
+    struct PresetInfo
+    {
+        juce::String name = "Init Saw", category = "Init", author = "", comment = "";
+        juce::String layerNames[stratum::kLayers];
+        juce::String macroNames[3] = { "Macro 1", "Macro 2", "Macro 3" };
+    };
+
+    stratum::APVTS apvts;
+    stratum::EngineParams engineParams;      // working copy used by the audio thread (also holds step data)
+    PresetInfo info;
+
+    std::atomic<float> modWheelValue { 0.0f }, pitchBendValue { 0.0f };
+    std::atomic<int> lastNote { -1 }, lastVelocity { 0 };
+    std::atomic<float> cpuLoad { 0.0f };
+    std::atomic<bool> panicRequested { false };
+
+    float getLayerPeak (int l) const { return engine ? engine->layerPeak (l) : 0.0f; }
+    float getOutputPeak() const { return engine ? engine->outPeak() : 0.0f; }
+    int getVoiceCount() const { return voiceCount.load(); }
+
+    // presets
+    int getNumFactoryPresets() const;
+    juce::String getFactoryPresetLabel (int i) const;
+    void loadFactoryPreset (int index);
+    int currentFactoryIndex = 0;
+
+    static juce::File getUserPresetDirectory();
+    bool saveUserPreset (const juce::String& name);
+    bool loadPresetFile (const juce::File& file);
+    juce::Array<juce::File> listUserPresets() const;
+
+private:
+    static stratum::APVTS::ParameterLayout createLayout();
+    void applySnapshot (const stratum::EngineParams& snap, const PresetInfo& newInfo);
+    void copyCustomState (const stratum::EngineParams& src);
+    std::unique_ptr<juce::XmlElement> makeStateXml();
+    void restoreFromXml (juce::XmlElement& xml);
+    void handleMidi (const juce::MidiMessage& m);
+    void renderChunk (float* l, float* r, int start, int count);
+
+    std::unique_ptr<stratum::ParamBinder> binder;
+    std::unique_ptr<stratum::Engine> engine;
+    double sampleRateHz = 44100.0;
+    int maxBlock = 512;
+    stratum::Transport transport;
+    double internalPpq = 0.0;
+    std::atomic<int> voiceCount { 0 };
+    bool sustainDown = false;
+    std::bitset<128> held, sustained;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StratumProcessor)
+};

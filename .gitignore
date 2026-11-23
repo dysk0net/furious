@@ -1,0 +1,11 @@
+build/
+cmake-build-*/
+out/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+.DS_Store
+*.wav
+dsp_test

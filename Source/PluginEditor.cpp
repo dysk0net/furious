@@ -401,7 +401,7 @@ private:
 class ModPanel : public juce::Component
 {
 public:
-    ModPanel (StratumProcessor& p, std::vector<Ctl*>& all) : display (p)
+    ModPanel (StratumProcessor& p, std::vector<Ctl*>& all) : display (p), proc (p)
     {
         R.parent = this;
         auto& A = p.apvts;
@@ -429,6 +429,9 @@ public:
         for (int i = 0; i < 3; ++i) combos[i] = &R.make<Combo> (A, juce::StringArray ("-"), "e" "A_vel");
         for (int i = 0; i < 3; ++i) toggles[i] = &R.make<Toggle> (A, "", "e" "A_vel");
         for (auto* c : R.ctls) all.push_back (c);
+        randomBtn.setButtonText ("Random");
+        randomBtn.onClick = [this] { randomiseSequence(); };
+        addChildComponent (randomBtn);
         buttons[0]->setToggleState (true, juce::dontSendNotification);
         configure();
     }
@@ -468,14 +471,24 @@ public:
         for (int i = 0; i < 10; ++i) knobs[i]->setBounds (kr.getX() + i * 56, kr.getY(), 56, kr.getHeight());
         lower.removeFromLeft (8);
         int cy = lower.getY() + 2;
-        for (int i = 0; i < 3; ++i) combos[i]->setBounds (lower.getX() + (i % 2) * 120, cy + (i / 2) * 26, 116, 22);
-        for (int i = 0; i < 3; ++i) toggles[i]->setBounds (lower.getX() + 250, cy + i * 21, 100, 20);
+        for (int i = 0; i < 3; ++i) combos[i]->setBounds (lower.getX(), cy + i * 24, 116, 22);
+        randomBtn.setBounds (lower.getX(), cy + visibleCombos * 24, 116, 22);
+        for (int i = 0; i < 3; ++i) toggles[i]->setBounds (lower.getX() + 124, cy + i * 24, 110, 22);
     }
 
     ModDisplay display;
 
 private:
     struct Def { const char* label; const char* suffix; };
+
+    // Fills all 32 steps of the selected sequence with random values (quantised like hand-drawn steps).
+    void randomiseSequence()
+    {
+        auto& steps = proc.engineParams.layer[layer].seq[modeIdx].steps;
+        auto& rng = juce::Random::getSystemRandom();
+        for (int i = 0; i < kMaxSteps; ++i) steps[i] = std::round ((rng.nextFloat() * 2.0f - 1.0f) * 16.0f) / 16.0f;
+        display.repaint();
+    }
 
     void select (int group, int idx)
     {
@@ -523,6 +536,8 @@ private:
             comboItems = { names (ArpNumOrders, arpOrderName), names (kNumDivs, divName) };
         }
         visibleKnobs = (int) k.size();
+        visibleCombos = (int) c.size();
+        randomBtn.setVisible (modeGroup == 2);
         for (int i = 0; i < 10; ++i)
         {
             knobs[i]->setVisible (i < (int) k.size());
@@ -538,12 +553,14 @@ private:
         resized();
     }
 
+    StratumProcessor& proc;
     Registry R;
     juce::OwnedArray<juce::TextButton> buttons;
+    juce::TextButton randomBtn;
     Knob* knobs[10];
     Combo* combos[3];
     Toggle* toggles[3];
-    int layer = 0, modeGroup = 0, modeIdx = 0, visibleKnobs = 10;
+    int layer = 0, modeGroup = 0, modeIdx = 0, visibleKnobs = 10, visibleCombos = 0;
     int groupX[3] = { 78, 252, 454 };
 };
 
@@ -652,7 +669,7 @@ public:
         auto top = r.removeFromTop (22);
         type->setBounds (top.removeFromLeft (150));
         top.removeFromLeft (10);
-        div->setBounds (top.removeFromLeft (90));
+        div->setBounds (top.removeFromLeft (112));
         top.removeFromLeft (10);
         len->setBounds (top.removeFromLeft (90));
         auto kr = r.removeFromLeft (5 * 58);
@@ -974,6 +991,7 @@ struct StratumEditor::Header : public juce::Component
         thresh = &R.make<Knob> (A, "Threshold", "master_thr", true);
         master = &R.make<Knob> (A, "Master", "master_gain", true);
         R.rebindAll (0);
+        for (Knob* k : { macro[0], macro[1], macro[2], thresh, master }) k->name.setColour (juce::Label::textColourId, col::hdrText);
         prev.setButtonText ("<"); next.setButtonText (">"); panic.setButtonText ("Panic");
         for (auto* b : { &prev, &next, &panic }) addAndMakeVisible (b);
         prev.onClick = [this] { proc.loadFactoryPreset ((proc.currentFactoryIndex + proc.getNumFactoryPresets() - 1) % proc.getNumFactoryPresets()); };

@@ -75,6 +75,13 @@ int main()
     std::unique_ptr<EngineParams> E (new EngineParams());
     eng->prepare (fs, 512);
 
+    // 0. dotted divisions are 1.5x the length of their straight counterparts (1/2 .. 1/32 are entries 3..7)
+    {
+        bool ok = true;
+        for (int k = 0; k < 5; ++k) ok = ok && std::fabs (kDivCyclesPerBeat[9 + k] * 1.5f - kDivCyclesPerBeat[3 + k]) < 1.0e-4f;
+        CHECK (ok && kNumDivs == 14, "dotted tempo divisions are 1.5x as long as straight ones");
+    }
+
     // 1. basic patch
     initPatch (*E);
     eng->noteOn (1, 48, 0.9f, *E); eng->noteOn (1, 55, 0.9f, *E); eng->noteOn (1, 64, 0.9f, *E);

@@ -37,11 +37,15 @@ struct Rng
 };
 
 // Tempo-sync divisions, expressed as cycles per beat (quarter note).
-constexpr int kNumDivs = 9;
-constexpr float kDivCyclesPerBeat[kNumDivs] = { 0.0625f, 0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f };
+constexpr int kNumDivs = 14;
+// Entries 0-8 are straight divisions; 9-13 are dotted (1.5x as long, so 2/3 of the cycles per beat).
+// Dotted entries are appended so parameter values saved by earlier versions keep their meaning.
+constexpr float kDivCyclesPerBeat[kNumDivs] = { 0.0625f, 0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f,
+                                                0.33333334f, 0.6666667f, 1.3333334f, 2.6666667f, 5.3333335f };
 inline const char* divName (int i)
 {
-    static const char* n[kNumDivs] = { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" };
+    static const char* n[kNumDivs] = { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64",
+                                        "1/2 dotted", "1/4 dotted", "1/8 dotted", "1/16 dotted", "1/32 dotted" };
     return n[std::min (std::max (i, 0), kNumDivs - 1)];
 }
 

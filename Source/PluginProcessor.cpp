@@ -175,6 +175,12 @@ std::unique_ptr<juce::XmlElement> StratumProcessor::makeStateXml()
         for (int o = 0; o < kOscs; ++o)
             if (info.userTable[l][o].isNotEmpty()) c->setAttribute ("utab" + juce::String (l) + "_" + juce::String (o), info.userTable[l][o]);
         for (int k = 0; k < kSeqs; ++k) c->setAttribute ("seq" + juce::String (l) + "_" + juce::String (k), floatsToString (P.seq[k].steps, kMaxSteps));
+        for (int k = 0; k < kSeqs; ++k)
+        {
+            float so[kMaxSteps];
+            for (int s = 0; s < kMaxSteps; ++s) so[s] = P.seq[k].stepOn[s] ? 1.0f : 0.0f;
+            c->setAttribute ("seqOn" + juce::String (l) + "_" + juce::String (k), floatsToString (so, kMaxSteps));
+        }
         float on[kArpSteps];
         for (int s = 0; s < kArpSteps; ++s) on[s] = P.arp.stepOn[s] ? 1.0f : 0.0f;
         c->setAttribute ("arpOn" + juce::String (l), floatsToString (on, kArpSteps));
@@ -221,6 +227,16 @@ void StratumProcessor::restoreFromXml (juce::XmlElement& xml)
         for (int k = 0; k < kSeqs; ++k)
             if (custom->hasAttribute ("seq" + juce::String (l) + "_" + juce::String (k)))
                 stringToFloats (custom->getStringAttribute ("seq" + juce::String (l) + "_" + juce::String (k)), P.seq[k].steps, kMaxSteps);
+        for (int k = 0; k < kSeqs; ++k)
+        {
+            for (auto& b : P.seq[k].stepOn) b = true;             // older saves have no step switches
+            if (custom->hasAttribute ("seqOn" + juce::String (l) + "_" + juce::String (k)))
+            {
+                float so[kMaxSteps] = {};
+                stringToFloats (custom->getStringAttribute ("seqOn" + juce::String (l) + "_" + juce::String (k)), so, kMaxSteps);
+                for (int s = 0; s < kMaxSteps; ++s) P.seq[k].stepOn[s] = so[s] > 0.5f;
+            }
+        }
         if (custom->hasAttribute ("arpOn" + juce::String (l)))
         {
             float on[kArpSteps];
@@ -252,6 +268,7 @@ void StratumProcessor::copyCustomState (const EngineParams& src)
         LayerParams& d = engineParams.layer[l];
         const LayerParams& s = src.layer[l];
         for (int k = 0; k < kSeqs; ++k) std::copy (s.seq[k].steps, s.seq[k].steps + kMaxSteps, d.seq[k].steps);
+        for (int k = 0; k < kSeqs; ++k) std::copy (s.seq[k].stepOn, s.seq[k].stepOn + kMaxSteps, d.seq[k].stepOn);
         std::copy (s.arp.stepOn, s.arp.stepOn + kArpSteps, d.arp.stepOn);
         std::copy (s.arp.tune, s.arp.tune + kArpSteps, d.arp.tune);
         for (int k = 0; k < kFxSlots; ++k)

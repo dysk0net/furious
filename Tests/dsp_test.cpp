@@ -553,6 +553,33 @@ int main()
         CHECK (perm, "every move is a permutation");
     }
 
+    // 17. sequencer gate: step switches and gate length
+    {
+        SeqParams sp; sp.length = 4; sp.sync = false; sp.rateHz = 4.0f; sp.smooth = 0.0f;
+        for (int i = 0; i < 4; ++i) sp.steps[i] = 0.8f;
+        auto run = [&] (const SeqParams& q, float& openFrac, float& step1)
+        {
+            StepSeq ss; ss.reset(); int open = 0, n = 0; step1 = 1.0f;
+            const float dt = 1.0f / 1000.0f;                          // 4 steps/s: 250 samples per step
+            for (int i = 0; i < 1000; ++i)
+            {
+                float v = ss.advance (dt, q, 120.0);
+                if (i >= 250 && i < 500) step1 = std::min (step1, std::fabs (v) + (i == 400 ? 0.0f : 0.0f));
+                open += v > 0.5f; ++n;
+            }
+            openFrac = (float) open / (float) n;
+        };
+        float frac, s1;
+        run (sp, frac, s1);
+        CHECK (frac > 0.99f, "default gate keeps every step open for its whole length");
+        SeqParams half = sp; half.gateLength = 0.5f;
+        run (half, frac, s1);
+        CHECK (std::fabs (frac - 0.5f) < 0.03f, "gate length 0.5 holds each step for half its time");
+        SeqParams off = sp; off.stepOn[1] = false;
+        run (off, frac, s1);
+        CHECK (std::fabs (frac - 0.75f) < 0.03f && s1 < 0.01f, "a step that is switched off outputs nothing");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

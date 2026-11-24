@@ -418,17 +418,22 @@ public:
             int loop = (int) rawParam (A, layerId (layer, "s" + l + "_loop"));
             len = juce::jlimit (2, kMaxSteps, len);
             float sw = inner.getWidth() / (float) len;
+            const float stripH = std::max (10.0f, inner.getHeight() * 0.14f);
+            auto bars = inner.withTrimmedTop (stripH + 4.0f);
             for (int i = 0; i < len; ++i)
             {
+                const bool on = S.stepOn[i];
+                auto sb = juce::Rectangle<float> (inner.getX() + (float) i * sw + 1.0f, inner.getY(), sw - 2.0f, stripH);
+                g.setColour (on ? col::orange : col::panelHi); g.fillRect (sb);
                 float v = S.steps[i];
-                auto bar = juce::Rectangle<float> (inner.getX() + (float) i * sw + 1.0f, v >= 0 ? inner.getCentreY() - v * inner.getHeight() * 0.5f : inner.getCentreY(),
-                                                   sw - 2.0f, std::fabs (v) * inner.getHeight() * 0.5f);
-                g.setColour (i >= loop ? col::orange : col::orange.withAlpha (0.4f));
+                auto bar = juce::Rectangle<float> (bars.getX() + (float) i * sw + 1.0f, v >= 0 ? bars.getCentreY() - v * bars.getHeight() * 0.5f : bars.getCentreY(),
+                                                   sw - 2.0f, std::fabs (v) * bars.getHeight() * 0.5f);
+                g.setColour (! on ? col::dim.withAlpha (0.35f) : (i >= loop ? col::orange : col::orange.withAlpha (0.4f)));
                 g.fillRect (bar.withHeight (std::max (2.0f, bar.getHeight())));
             }
             const int playing = proc.getSeqPosition (layer, index);
             if (playing >= 0 && playing < len) drawPlayhead (g, inner, playing, sw);
-            g.setColour (col::orange); g.drawText ("Sequence " + l + "   (drag to draw steps)", getLocalBounds().reduced (8, 3), juce::Justification::topLeft);
+            g.setColour (col::orange); g.drawText ("Sequence " + l + "   top row: step on/off   drag below: draw steps", getLocalBounds().reduced (8, 3), juce::Justification::topLeft);
         }
         else
         {
@@ -477,7 +482,16 @@ private:
             int len = juce::jlimit (2, kMaxSteps, (int) rawParam (proc.apvts, layerId (layer, "s" + l + "_len")));
             int i = (int) ((e.position.x - inner.getX()) / inner.getWidth() * (float) len);
             if (i < 0 || i >= len) return;
-            float v = 1.0f - 2.0f * (e.position.y - inner.getY()) / inner.getHeight();
+            const float stripH = std::max (10.0f, inner.getHeight() * 0.14f);
+            if (e.position.y < inner.getY() + stripH + 2.0f)
+            {
+                if (first) paintOn = ! P.seq[index].stepOn[i];
+                P.seq[index].stepOn[i] = paintOn;
+                repaint();
+                return;
+            }
+            auto bars = inner.withTrimmedTop (stripH + 4.0f);
+            float v = 1.0f - 2.0f * (e.position.y - bars.getY()) / bars.getHeight();
             P.seq[index].steps[i] = juce::jlimit (-1.0f, 1.0f, std::round (v * 16.0f) / 16.0f);
             repaint();
         }
@@ -626,7 +640,7 @@ private:
         else if (modeGroup == 2)
         {
             pre = "s" + l + "_";
-            k = { { "Level", "lvl" }, { "Rate", "rate" }, { "Smooth", "smo" }, { "Shuffle", "shf" }, { "Length", "len" }, { "Loop", "loop" } };
+            k = { { "Level", "lvl" }, { "Rate", "rate" }, { "Smooth", "smo" }, { "Shuffle", "shf" }, { "Gate", "gate" }, { "Length", "len" }, { "Loop", "loop" } };
             c = { { "Sync Div", "div" }, { "Scale", "scl" }, { "Key", "key" } };
             t = { { "Retrigger", "rtg" }, { "BPM Sync", "sync" }, { "Oneshot", "one" } };
             comboItems = { names (kNumDivs, divName), names (kNumScales, scaleName), names (12, keyName) };

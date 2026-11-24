@@ -244,6 +244,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("lvl", "Level", s.level, 0.0f, 1.0f);
         B.f ("smo", "Smooth", s.smooth, 0.0f, 1.0f);
         B.f ("shf", "Shuffle", s.shuffle, 0.0f, 1.0f);
+        B.f ("gate", "Gate Length", s.gateLength, 0.05f, 1.0f);
         B.c ("scl", "Scale", s.scale, scaleNames);
         B.c ("key", "Key", s.key, keyNames);
     }

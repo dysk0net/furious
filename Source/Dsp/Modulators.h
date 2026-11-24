@@ -158,7 +158,10 @@ struct SeqParams
     float smooth = 0.0f;
     float shuffle = 0.0f;
     int scale = 0, key = 0;        // scale lock for pitch (see Scales.h); 0 = off
+    float gateLength = 1.0f;       // fraction of each step the gate stays open (0.05 .. 1)
+    bool stepOn[kMaxSteps];        // a step that is off (or past its gate) outputs 0, like a rest
     float steps[kMaxSteps] = {};   // -1..1
+    SeqParams() { for (auto& b : stepOn) b = true; }
 };
 
 struct StepSeq
@@ -193,7 +196,8 @@ struct StepSeq
                 pos = (float) idx + (pos - std::floor (pos));
             }
         }
-        float target = p.steps[idx];
+        const bool open = p.stepOn[idx] && (pos - std::floor (pos)) < p.gateLength;
+        float target = open ? p.steps[idx] : 0.0f;
         float coef = p.smooth <= 0.001f ? 1.0f : 1.0f - std::exp (-dt * (200.0f * (1.0f - p.smooth) + 2.0f));
         value += (target - value) * coef;
         return value * p.level;

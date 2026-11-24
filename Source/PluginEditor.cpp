@@ -242,7 +242,7 @@ public:
         fmOn = &R.make<Toggle> (A, "FM", "fm_on");
         fmType = &R.make<Combo> (A, names (2, fmTypeName), pre + "fmt");
         const char* fmSfx[3] = { "fma", "fmb", "fmc" }; const char* fmLbl[3] = { "In A", "In B", "In C" };
-        for (int i = 0; i < 3; ++i) fmIn[i] = &R.make<Knob> (A, fmLbl[i], pre + fmSfx[i]);
+        for (int i = 0; i < 3; ++i) { fmIn[i] = &R.make<Knob> (A, fmLbl[i], pre + fmSfx[i]); fmIn[i]->modTarget = TgFmBase + o * 3 + i; }
         bal = &R.make<Knob> (A, "Balance", pre + "bal");
         vol = &R.make<Knob> (A, "Volume", pre + "vol");
         vol->modTarget = TgOscVol1 + osc;

@@ -14,7 +14,7 @@ all code, wavetables and presets here were written from scratch.
   mip levels), up to 8 unison voices, detune/spread, bass/treble tone control, phase and phase randomisation
 - FM mode (switch on any layer; layer 8 starts in it): the three oscillators modulate each other with free
   routing (every oscillator has In A / In B / In C amounts, so loops and self-feedback work), linear or exponential
-  FM per oscillator; a silent-volume oscillator works as a pure modulator
+  FM per oscillator; every FM amount is also a modulation-matrix target; a silent-volume oscillator works as a pure modulator
 - Oscillator FX: tube drive, phase modulation, ring modulation, hard sync, bend, mirror, noise, chaos phase; the oscillator display shows the effect on the waveform (dry waveform drawn faintly behind it)
 - 20 filter types: LP/HP 6/12/24, band-pass, notch, peak, ladder, comb, formant, plus Z-Plane Vowel (three
   morphing formants), Z-Plane Sweep (moving pole pair), Morph LP-BP-HP, Morph Comb (signed feedback), Phase Filter
@@ -23,13 +23,13 @@ all code, wavetables and presets here were written from scratch.
 - 7 insert types (tube, overdrive, tone fuzz, bitcrusher, exciter, ring mod), filter/insert order switch
 - 4 envelopes (delay, attack, level, decay, sustain, release, per-stage slopes), 4 dual-waveform LFOs
   (bend, phase, fade, tempo sync), 4 step sequencers (32 steps, per-step on/off, gate length, loop point, oneshot, smoothing, scale lock)
-- 8-slot modulation matrix per layer: 19 sources x 22 targets, bipolar amounts, 3 macros
+- 8-slot modulation matrix per layer: 19 sources x 31 targets, bipolar amounts, 3 macros
 - Arpeggiator: 16-step pattern with per-step on/off and transpose, 6 orders, 1-4 octaves, tempo sync
 - Scale lock for the arpeggiator and for each sequencer (when it drives an oscillator's pitch): Major, Minor,
   Phrygian, Blues, Phrygian Dominant, Double Harmonic, Hungarian Minor, Hirajoshi and Whole Tone, in any key.
   Notes snap to the nearest scale note; a note exactly halfway between two goes to the lower one
 - Mono legato with glide, voice limit, MIDI channel and key range per layer
-- 7-slot effect rack (drag a slot up or down in the list to reorder; its settings, trancegate pattern and
+- 7-slot effect rack incl. a shimmer reverb (drag a slot up or down in the list to reorder; its settings, trancegate pattern and
   mod routes move with it): reverb, delay, chorus, phaser, distortion, bitcrusher, trancegate (2 x 32 steps),
   compressor, sidechain ducker, balancer
 

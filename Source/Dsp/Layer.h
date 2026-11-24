@@ -95,7 +95,8 @@ enum ModTarget
 {
     TgNone = 0, TgOscVol1, TgOscVol2, TgOscVol3, TgOscMorph1, TgOscMorph2, TgOscMorph3,
     TgOscPitch1, TgOscPitch2, TgOscPitch3, TgCutoff, TgResonance, TgInsertDrive, TgLayerGain,
-    TgLayerPan, TgDetune, TgFx1Mix, TgFx2Mix, TgFx3Mix, TgFx4Mix, TgFx5Mix, TgFx6Mix, TgFx7Mix, TgNum
+    TgLayerPan, TgDetune, TgFx1Mix, TgFx2Mix, TgFx3Mix, TgFx4Mix, TgFx5Mix, TgFx6Mix, TgFx7Mix,
+    TgFmBase, TgFmEnd = TgFmBase + 8, TgNum   // nine FM amounts: carrier * 3 + modulator
 };
 
 inline const char* modSourceName (int s)
@@ -111,7 +112,9 @@ inline const char* modTargetName (int t)
     static const char* n[TgNum] = { "----", "Osc-A Volume", "Osc-B Volume", "Osc-C Volume", "Osc-A Morph", "Osc-B Morph",
         "Osc-C Morph", "Osc-A Pitch", "Osc-B Pitch", "Osc-C Pitch", "Filter-Cutoff", "Filter-Resonance",
         "Insert-Drive", "Layer Gain", "Layer Pan", "Unison Detune", "FX 1 Mix", "FX 2 Mix", "FX 3 Mix",
-        "FX 4 Mix", "FX 5 Mix", "FX 6 Mix", "FX 7 Mix" };
+        "FX 4 Mix", "FX 5 Mix", "FX 6 Mix", "FX 7 Mix",
+        "FM A from A", "FM A from B", "FM A from C", "FM B from A", "FM B from B", "FM B from C",
+        "FM C from A", "FM C from B", "FM C from C" };
     return n[std::min (std::max (t, 0), (int) TgNum - 1)];
 }
 
@@ -545,6 +548,7 @@ private:
         struct OscCtx
         {
             bool on; int table, mip, nu; const UserTable* user; float morph, vol, freq, detuneCents, norm, tubeNorm;
+            float fm[kOscs];
             float inc[kMaxUnison], gl[kMaxUnison], gr[kMaxUnison];
         };
         OscCtx oc[kOscs];
@@ -558,6 +562,7 @@ private:
             float semis = base + (float) op.semi + op.cent * 0.01f + tg[TgOscPitch1 + o] * 24.0f;
             oc[o].freq = midiToHz (semis);
             oc[o].table = op.table;
+            for (int m = 0; m < kOscs; ++m) oc[o].fm[m] = clampf (op.fmIn[m] + tg[TgFmBase + o * kOscs + m], -1.0f, 1.0f);
             oc[o].morph = clampf (op.morph + tg[TgOscMorph1 + o], 0.0f, 1.0f);
             oc[o].vol = clampf (op.volume + tg[TgOscVol1 + o], 0.0f, 1.5f);
             oc[o].detuneCents = 75.0f * clampf (op.detune + tg[TgDetune], 0.0f, 1.0f);
@@ -595,7 +600,7 @@ private:
                     float fmSum = 0.0f;
                     if (P.fmMode)
                         for (int m = 0; m < kOscs; ++m)
-                            if (op.fmIn[m] != 0.0f && oc[m].on) fmSum += op.fmIn[m] * v.fmPrev[m][std::min (u, oc[m].nu - 1)];
+                            if (oc[o].fm[m] != 0.0f && oc[m].on) fmSum += oc[o].fm[m] * v.fmPrev[m][std::min (u, oc[m].nu - 1)];
                     if (fmSum != 0.0f && op.fmType == 1) inc *= std::exp2 (clampf (fmSum * 3.0f, -8.0f, 4.0f));   // exponential FM: pitch
                     float& ph = v.phase[o][u];
                     ph += inc; if (ph >= 1.0f) ph -= std::floor (ph);

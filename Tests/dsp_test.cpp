@@ -642,6 +642,60 @@ int main()
         CHECK (st4.bad == 0 && wt != wl, "oscillator effects still apply in FM mode");
     }
 
+    // 20. FM amounts as modulation targets, and the shimmer reverb
+    {
+        auto setup = [&]
+        {
+            initPatch (*E);
+            LayerParams& P = E->layer[0];
+            P.mod[0] = { false, 0, 0, 0.0f }; P.fx[0].type = FxNone;
+            P.filter.type = FltOff;
+            P.osc[0].unison = 1; P.osc[0].table = 0; P.osc[0].morph = 0.0f;
+            P.osc[1].on = true; P.osc[1].unison = 1; P.osc[1].semi = 7; P.osc[1].volume = 0.0f; P.osc[1].table = 0; P.osc[1].morph = 0.0f;
+            P.osc[2].on = false; P.fmMode = true; P.osc[0].fmIn[1] = 0.0f;
+        };
+        auto roughness = [&] (std::vector<float>& w)
+        {
+            double d = 0, e = 0;
+            for (size_t i = 8; i < w.size(); ++i) { d += std::fabs (w[i] - w[i - 2]); e += std::fabs (w[i]); }
+            return e > 0 ? d / e : 0.0;
+        };
+        auto render = [&]
+        {
+            std::vector<float> w; eng->panic (); eng->noteOn (1, 45, 1.0f, *E);
+            renderSeconds (*eng, *E, 0.6f, fs, &w);
+            return roughness (w);
+        };
+        setup (); render ();
+        const double plain = render ();
+        setup (); E->layer[0].mod[0] = { true, SrcMacro1, TgFmBase + 1, 0.8f }; E->macros[0] = 1.0f;     // macro 1 -> "FM A from B"
+        const double modded = render ();
+        std::printf ("      (roughness without the FM route %.3f, with the macro raising A from B %.3f)\n", plain, modded);
+        CHECK (modded > plain * 1.15, "a mod-matrix route to an FM amount opens up the FM");
+        CHECK (TgNum == TgFmBase + 9, "nine FM mod targets");
+
+        // shimmer: energy one octave above the input appears in the tail
+        auto tailAt = [&] (float shimmerAmt, float hz)
+        {
+            FxSlot fx; fx.prepare (fs);
+            FxParams fp; fp.type = FxShimmer; fp.mix = 1.0f; fp.a = 0.8f; fp.b = 0.3f; fp.c = shimmerAmt; fp.d = 0.5f;
+            Transport tp; tp.bpm = 120.0; tp.ppq = 0.0;
+            const int N = (int) (fs * 3.0);
+            std::vector<float> L ((size_t) N), R ((size_t) N);
+            for (int i = 0; i < N; ++i) { float x = i < (int) (fs * 0.3) ? 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs) : 0.0f; L[(size_t) i] = R[(size_t) i] = x; }
+            for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
+            double re = 0, im = 0; int a = (int) (fs * 1.2), b = N;
+            for (int i = a; i < b; ++i) { re += L[(size_t) i] * std::cos (kTwoPi * hz * (float) i / fs); im += L[(size_t) i] * std::sin (kTwoPi * hz * (float) i / fs); }
+            bool finite = true; for (float v : L) finite = finite && std::isfinite (v) && std::fabs (v) < 20.0f;
+            CHECK (finite, "shimmer stays finite");
+            return std::sqrt (re * re + im * im) / (double) (b - a);
+        };
+        const double up0 = tailAt (0.0f, 440.0f), up1 = tailAt (1.0f, 440.0f);
+        std::printf ("      (440 Hz in the tail: shimmer 0 -> %.5f, shimmer 1 -> %.5f)\n", up0, up1);
+        CHECK (up1 > up0 * 3.0, "shimmer builds energy an octave above the input");
+        CHECK (FxNumTypes == 12, "12 effect types");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

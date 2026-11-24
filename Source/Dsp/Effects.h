@@ -8,13 +8,13 @@ namespace stratum
 enum FxType
 {
     FxNone = 0, FxReverb, FxDelay, FxChorus, FxPhaser, FxDistortion, FxBitcrush,
-    FxTrancegate, FxCompressor, FxSidechain, FxBalancer, FxNumTypes
+    FxTrancegate, FxCompressor, FxSidechain, FxBalancer, FxShimmer, FxNumTypes
 };
 
 inline const char* fxTypeName (int t)
 {
     static const char* n[FxNumTypes] = { "----", "Reverb", "Delay", "Chorus", "Phaser", "Distortion",
-                                         "Bitcrush", "Trancegate", "Compressor", "Sidechain", "Balancer" };
+                                         "Bitcrush", "Trancegate", "Compressor", "Sidechain", "Balancer", "Shimmer Reverb" };
     return n[std::min (std::max (t, 0), (int) FxNumTypes - 1)];
 }
 
@@ -31,7 +31,8 @@ inline const char* fxParamLabel (int type, int idx)
         { "Smooth", "Shuffle", "Depth", "" },
         { "Threshold", "Ratio", "Release", "Makeup" },
         { "Depth", "Length", "Shape", "Offset" },
-        { "Volume", "Pan", "Width", "" } };
+        { "Volume", "Pan", "Width", "" },
+        { "Size", "Damp", "Shimmer", "Pitch" } };
     return labels[std::min (std::max (type, 0), (int) FxNumTypes - 1)][idx & 3];
 }
 
@@ -74,6 +75,8 @@ public:
         delayLen = dl;
         for (auto& d : pre) d.assign ((size_t) (fs * 0.1f) + 8, 0.0f);
         for (auto& d : cho) d.assign ((size_t) (fs * 0.06f) + 8, 0.0f);
+        shWin = fs * 0.085f;
+        for (auto& d : shBuf) d.assign ((size_t) shWin + 16, 0.0f);
         float sc = fs / 44100.0f;
         static const int combT[8] = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 };
         static const int apT[4] = { 556, 441, 341, 225 };
@@ -97,6 +100,8 @@ public:
             for (auto& s : apState[c]) s = 0.0f;
             fbState[c] = 0.0f; toneLp[c] = 0.0f; holdS[c] = 0.0f;
         }
+        for (auto& d : shBuf) std::fill (d.begin(), d.end(), 0.0f);
+        shPos = 0; shPh = 0.0f; shFb[0] = shFb[1] = 0.0f; shLp[0] = shLp[1] = 0.0f;
         dPos = preIdx = choIdx = 0;
         lfoPh = 0.0; gateGain[0] = gateGain[1] = 1.0f; env = 0.0f;
     }
@@ -121,6 +126,7 @@ public:
                 case FxCompressor: compressor (dl, dr, wl, wr, p); break;
                 case FxSidechain: sidechain (wl, wr, p, beat); break;
                 case FxBalancer: balancer (dl, dr, wl, wr, p); break;
+                case FxShimmer: shimmer (dl, dr, wl, wr, p); break;
                 default: break;
             }
             L[i] = dl + (wl - dl) * p.mix;
@@ -137,6 +143,9 @@ private:
     Comb comb[2][8];
     Ap ap[2][4];
     float apState[2][6] = {}, fbState[2] = {}, toneLp[2] = {}, holdS[2] = {};
+    std::vector<float> shBuf[2];                // pitch shifter inside the shimmer reverb's feedback loop
+    float shWin = 3750.0f, shPh = 0.0f, shFb[2] = {}, shLp[2] = {};
+    int shPos = 0;
     double lfoPh = 0.0;
     float gateGain[2] = { 1, 1 };
     float env = 0.0f, holdCnt = 0.0f;
@@ -186,6 +195,57 @@ private:
         wr = out[1] * (0.5f + 0.5f * w) + out[0] * (0.5f - 0.5f * w);
         wl *= 3.0f; wr *= 3.0f;
     }
+
+    // Reverb whose tail is fed back through an up-shifting pitch shifter, so every repeat climbs.
+    void shimmer (float dl, float dr, float& wl, float& wr, const FxParams& p)
+    {
+        float in = (dl + dr) * 0.015f;
+        const float fb = 0.72f + 0.26f * p.a, damp = p.b * 0.4f;
+        const float amount = p.c * 0.7f;
+        const float semis = p.d * 24.0f;                          // 0 .. 24 semitones up, 12 in the middle
+        const float ratio = std::exp2 (semis / 12.0f);
+        float out[2] = { 0, 0 };
+        const float inL = in + shFb[0] * 0.015f, inR = in + shFb[1] * 0.015f;
+        for (int c = 0; c < 2; ++c)
+        {
+            const float x = c == 0 ? inL : inR;
+            for (auto& cb : comb[c])
+            {
+                float y = cb.buf[(size_t) cb.idx];
+                cb.lp = y * (1.0f - damp) + cb.lp * damp;
+                cb.buf[(size_t) cb.idx] = x + cb.lp * fb;
+                if (++cb.idx >= (int) cb.buf.size()) cb.idx = 0;
+                out[c] += y;
+            }
+            for (auto& a : ap[c])
+            {
+                float y = a.buf[(size_t) a.idx];
+                a.buf[(size_t) a.idx] = out[c] + y * 0.5f;
+                out[c] = y - out[c];
+                if (++a.idx >= (int) a.buf.size()) a.idx = 0;
+            }
+        }
+        // pitch shift the tail with two crossfaded read heads
+        float sh[2];
+        const float w1 = std::sin (kPi * shPh), w2 = std::cos (kPi * shPh);
+        const float d1 = shPh * shWin, d2 = oscFracLocal (shPh + 0.5f) * shWin;
+        for (int c = 0; c < 2; ++c)
+        {
+            shBuf[c][(size_t) shPos] = out[c] * 3.0f;
+            sh[c] = readFrac (shBuf[c], shPos, d1) * w1 * w1 + readFrac (shBuf[c], shPos, d2) * w2 * w2;
+        }
+        shPos = (shPos + 1) % (int) shBuf[0].size();
+        shPh = oscFracLocal (shPh - (ratio - 1.0f) / shWin);
+        for (int c = 0; c < 2; ++c)
+        {
+            shLp[c] += 0.45f * (sh[c] - shLp[c]);                // soften the shifted copy
+            shFb[c] = std::tanh (shLp[c]) * amount;
+        }
+        const float w = 0.8f;
+        wl = (out[0] * (0.5f + 0.5f * w) + out[1] * (0.5f - 0.5f * w)) * 3.0f;
+        wr = (out[1] * (0.5f + 0.5f * w) + out[0] * (0.5f - 0.5f * w)) * 3.0f;
+    }
+    static float oscFracLocal (float x) { return x - std::floor (x); }
 
     void delayFx (float dl, float dr, float& wl, float& wr, const FxParams& p, double bpm)
     {

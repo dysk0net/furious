@@ -1,10 +1,10 @@
-# Stratum
+# Furious
 
 An original layered hybrid synthesizer, built as a **VST3** instrument (plus a Standalone app) with
 [JUCE](https://juce.com) and CMake. Eight independent synth layers can be played separately by MIDI
 channel or key range, or stacked into one big patch.
 
-Stratum is an independent project. It is not affiliated with or derived from any other synthesizer:
+Furious is an independent project. It is not affiliated with or derived from any other synthesizer:
 all code, wavetables and presets here were written from scratch.
 
 ## Features
@@ -35,18 +35,20 @@ all code, wavetables and presets here were written from scratch.
 
 **Master**
 - 8-channel mixer (fader, pan, solo, meters), master gain, limiter, pitch bend range, key offset
-- Preset browser with factory sounds and user presets (`Documents/Stratum/Presets/*.stpreset`)
+- Preset browser with factory sounds and user presets (`Documents/Furious/Presets/*.stpreset`)
 - Resizable GUI (fixed 16:9, scales with the window)
 
 Every control is a host parameter, so everything can be automated.
 
 ## Your own wavetables
 
-Stratum loads wavetables in the same `.wav` format Serum uses. Put them in your Documents folder, in a folder you
+Furious loads wavetables in the same `.wav` format Serum uses. Put them in your Documents folder, in a folder you
 create yourself (it is not created automatically):
 
-- Windows: `C:\Users\<you>\Documents\Stratum\Wavetables\`
-- macOS / Linux: `~/Documents/Stratum/Wavetables/`
+- Windows: `C:\Users\<you>\Documents\Furious\Wavetables\`
+- macOS / Linux: `~/Documents/Furious/Wavetables/`
+
+(If you made a `Documents/Stratum` folder under the plug-in's earlier name and have no `Documents/Furious`, it is still used.)
 
 Click an oscillator's waveform display and choose a file under **User wavetables**. Subfolders become submenus,
 and the list is rescanned every time the menu opens, so new files show up without restarting. The **Morph**
@@ -69,13 +71,13 @@ Requires CMake 3.22+ and a C++17 compiler. JUCE 8.0.8 is downloaded automaticall
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target Stratum_VST3 --parallel
+cmake --build build --config Release --target Furious_VST3 --parallel
 ```
 
-The plugin bundle is written to `build/Stratum_artefacts/**/VST3/Stratum.vst3`.
-Add `-DSTRATUM_COPY_AFTER_BUILD=ON` to install it straight into your system VST3 folder
+The plugin bundle is written to `build/Furious_artefacts/**/VST3/Furious.vst3`.
+Add `-DFURIOUS_COPY_AFTER_BUILD=ON` to install it straight into your system VST3 folder
 (Windows `C:\Program Files\Common Files\VST3`, macOS `~/Library/Audio/Plug-Ins/VST3`,
-Linux `~/.vst3`). Use `--target Stratum_Standalone` for the standalone app.
+Linux `~/.vst3`). Use `--target Furious_Standalone` for the standalone app.
 
 **Linux packages** (Debian/Ubuntu): `libasound2-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev
 libxinerama-dev libxrandr-dev libxrender-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev`
@@ -90,8 +92,8 @@ The macOS build is unsigned, so Gatekeeper will ask you to allow it the first ti
 The whole sound engine lives in `Source/Dsp` and has no JUCE dependency, so it can be tested on its own:
 
 ```bash
-cmake -S . -B build -DSTRATUM_BUILD_PLUGIN=OFF
-cmake --build build --target StratumDspTests && ctest --test-dir build --output-on-failure
+cmake -S . -B build -DFURIOUS_BUILD_PLUGIN=OFF
+cmake --build build --target FuriousDspTests && ctest --test-dir build --output-on-failure
 ```
 
 It renders audio for every filter, insert, oscillator FX, wavetable and effect type, sweeps every modulation
@@ -110,7 +112,7 @@ source against every target, and checks for NaN/Inf, runaway levels, voice steal
 
 ## Licensing
 
-Stratum is released under the **GNU AGPL-3.0** (see `LICENSE`), which matches JUCE's open-source license.
+Furious is released under the **GNU AGPL-3.0** (see `LICENSE`), which matches JUCE's open-source license.
 If you want to distribute a closed-source build you need a commercial JUCE license instead.
 The VST3 interface comes from the SDK bundled with JUCE; check that SDK's license terms if you redistribute binaries.
 "VST" is a trademark of Steinberg Media Technologies GmbH.

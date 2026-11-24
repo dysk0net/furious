@@ -1,4 +1,4 @@
-name: Build Stratum
+name: Build Furious
 
 on:
   push:
@@ -17,15 +17,15 @@ jobs:
         include:
           - name: Windows
             os: windows-latest
-            artifact: Stratum-VST3-Windows
+            artifact: Furious-VST3-Windows
             cmake_extra: ""
           - name: macOS (Universal)
             os: macos-latest
-            artifact: Stratum-VST3-macOS
+            artifact: Furious-VST3-macOS
             cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64
           - name: Linux
             os: ubuntu-22.04
-            artifact: Stratum-VST3-Linux
+            artifact: Furious-VST3-Linux
             cmake_extra: ""
 
     steps:
@@ -46,18 +46,18 @@ jobs:
       - name: Build and run DSP self-test
         shell: bash
         run: |
-          cmake --build build --config Release --target StratumDspTests
+          cmake --build build --config Release --target FuriousDspTests
           ctest --test-dir build -C Release --output-on-failure
 
       - name: Build VST3
         shell: bash
-        run: cmake --build build --config Release --target Stratum_VST3 --parallel
+        run: cmake --build build --config Release --target Furious_VST3 --parallel
 
       - name: Collect VST3
         shell: bash
         run: |
           mkdir -p dist
-          bundle="$(find build -type d -name 'Stratum.vst3' | head -n 1)"
+          bundle="$(find build -type d -name 'Furious.vst3' | head -n 1)"
           test -n "$bundle"
           cp -R "$bundle" dist/
           cp LICENSE README.md dist/ || true

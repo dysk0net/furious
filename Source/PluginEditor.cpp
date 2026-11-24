@@ -1259,8 +1259,14 @@ struct StratumEditor::Header : public juce::Component
         auto r = getLocalBounds();
         g.setGradientFill (juce::ColourGradient (col::hdrTop, 0, 0, col::hdrBot, 0, (float) r.getHeight(), false));
         g.fillRect (r);
-        g.setColour (col::hdrText); g.setFont (font (40.0f, true));
-        g.drawText ("STRATUM", 16, 2, 230, 48, juce::Justification::centredLeft);
+        g.setFont (font (40.0f, true));
+        {
+            const juce::String name ("FURIOUS");
+            const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), name);
+            g.setGradientFill (juce::ColourGradient (col::blue, 16.0f, 0.0f, col::orange, 16.0f + tw, 0.0f, false));   // blue to orange
+            g.drawText (name, 16, 2, 230, 48, juce::Justification::centredLeft);
+        }
+        g.setColour (col::hdrText);
         g.setFont (font (12.0f));
         g.drawText ("0.1.0  |  VST3  |  64-bit", 18, 50, 220, 16, juce::Justification::centredLeft);
 

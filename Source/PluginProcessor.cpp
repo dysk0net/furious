@@ -14,6 +14,16 @@ stratum::APVTS::ParameterLayout StratumProcessor::createLayout()
     return layout;
 }
 
+//==============================================================================
+// Documents/Furious, or the Documents/Stratum folder from the plug-in's earlier name when that is the one that exists.
+static juce::File userDataFolder()
+{
+    const auto docs = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    const auto fresh = docs.getChildFile ("Furious"), old = docs.getChildFile ("Stratum");
+    return (! fresh.isDirectory() && old.isDirectory()) ? old : fresh;
+}
+
+
 StratumProcessor::StratumProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "STRATUM", createLayout()),
@@ -301,14 +311,14 @@ void StratumProcessor::loadFactoryPreset (int index)
     const auto& p = factoryPresets()[(size_t) index];
     p.build (snap);
     PresetInfo pi;
-    pi.name = p.name; pi.category = p.category; pi.author = "Stratum";
+    pi.name = p.name; pi.category = p.category; pi.author = "Furious";
     for (int l = 0; l < kLayers; ++l) pi.layerNames[l] = juce::String (l + 1);
     applySnapshot (snap, pi);
 }
 
 juce::File StratumProcessor::getUserPresetDirectory()
 {
-    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Stratum").getChildFile ("Presets");
+    return userDataFolder().getChildFile ("Presets");
 }
 
 bool StratumProcessor::saveUserPreset (const juce::String& name)
@@ -337,11 +347,10 @@ juce::Array<juce::File> StratumProcessor::listUserPresets() const
     return getUserPresetDirectory().findChildFiles (juce::File::findFiles, true, "*.stpreset");
 }
 
-//==============================================================================
 // User wavetables
 juce::File StratumProcessor::getWavetableDirectory()
 {
-    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Stratum").getChildFile ("Wavetables");
+    return userDataFolder().getChildFile ("Wavetables");
 }
 
 juce::String StratumProcessor::loadWavetableIntoSlot (int slot, const juce::String& relativePath)

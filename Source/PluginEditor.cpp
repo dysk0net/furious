@@ -611,8 +611,14 @@ public:
         auto lower = r.removeFromBottom (74);
         display.setBounds (r);
         int nk = visibleKnobs;
-        auto kr = lower.removeFromLeft (nk * 56 + 4);
-        for (int i = 0; i < 10; ++i) knobs[i]->setBounds (kr.getX() + i * 56, kr.getY(), 56, kr.getHeight());
+        // knobs shrink (down to about the size of the filter knobs) so the combos, switches and Random button always fit
+        int extent = 0;
+        for (int i = 0; i < 4; ++i) if (combos[i]->isVisible()) extent = std::max (extent, comboPos[i].x + comboPos[i].w);
+        for (int i = 0; i < 3; ++i) if (toggles[i]->isVisible()) extent = std::max (extent, togglePos[i].x + togglePos[i].w);
+        if (randomBtn.isVisible()) extent = std::max (extent, randomPos.x + randomPos.w);
+        const int kw = juce::jlimit (40, 56, (lower.getWidth() - extent - 16) / std::max (1, nk));
+        auto kr = lower.removeFromLeft (nk * kw + 4);
+        for (int i = 0; i < 10; ++i) knobs[i]->setBounds (kr.getX() + i * kw, kr.getY(), kw, kr.getHeight());
         lower.removeFromLeft (8);
         int cy = lower.getY() + 2;
         for (int i = 0; i < 4; ++i) combos[i]->setBounds (lower.getX() + comboPos[i].x, cy + comboPos[i].row * 24, comboPos[i].w, 22);
@@ -681,9 +687,9 @@ private:
         }
         visibleKnobs = (int) k.size();
         // where each control sits in the strip under the knobs (x offset, row, width)
-        for (int i = 0; i < 4; ++i) comboPos[i] = { 0, i % 3, 116 };
-        for (int i = 0; i < 3; ++i) togglePos[i] = { 124, i, 110 };
-        randomPos = { 242, 0, 66 };
+        for (int i = 0; i < 4; ++i) comboPos[i] = { 0, i % 3, 108 };
+        for (int i = 0; i < 3; ++i) togglePos[i] = { 114, i, 104 };
+        randomPos = { 224, 0, 62 };
         if (modeGroup == 3)   // arpeggiator: order/rate in one column, scale/key in the next, switch to the right
         {
             comboPos[0] = { 0, 0, 116 }; comboPos[1] = { 0, 1, 116 };

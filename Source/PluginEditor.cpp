@@ -89,25 +89,85 @@ public:
                 v = lerpf (v, 2.0f * (std::sin (cyc * 523.0f) * std::sin (cyc * 191.0f + 2.0f) * 0.5f), fxAmt);
             return oscFxSample (fxType, fxAmt, v, modSin, oscFxTubeNorm (fxAmt));
         };
+        // FM mode: run the three oscillators for a few cycles with the engine's maths and keep one cycle of this one
+        const bool fmMode = rawParam (proc.apvts, layerId (layer, "fm_on")) > 0.5f;
+        std::vector<float> fmCycle;
+        juce::String fmFrom;
+        if (fmMode)
+        {
+            struct Op { bool on; int table, fx, fmType; float morph, fxAmt, fxTune, ratio, fm[3]; };
+            Op op[3]; float ph[3], opp[3] = {}, prev[3] = {}, semisOf[3];
+            decltype (proc.getUserWavetable (0, 0)) us[3];
+            for (int o = 0; o < 3; ++o)
+            {
+                const juce::String b = layerId (layer, juce::String ("o") + juce::String::charToString (kLetters[o]) + "_");
+                op[o].on = rawParam (proc.apvts, b + "on") > 0.5f;
+                op[o].table = (int) rawParam (proc.apvts, b + "tab"); op[o].morph = rawParam (proc.apvts, b + "morph");
+                op[o].fx = (int) rawParam (proc.apvts, b + "fx"); op[o].fxAmt = rawParam (proc.apvts, b + "fxa"); op[o].fxTune = rawParam (proc.apvts, b + "fxt");
+                op[o].fmType = (int) rawParam (proc.apvts, b + "fmt");
+                const char* sfx[3] = { "fma", "fmb", "fmc" };
+                for (int m = 0; m < 3; ++m) op[o].fm[m] = rawParam (proc.apvts, b + sfx[m]);
+                semisOf[o] = rawParam (proc.apvts, b + "semi") + rawParam (proc.apvts, b + "cent") * 0.01f;
+                ph[o] = rawParam (proc.apvts, b + "pha");
+                us[o] = proc.getUserWavetable (layer, o);
+            }
+            bool any = false;
+            for (int m = 0; m < 3; ++m) any = any || (op[osc].fm[m] != 0.0f && op[m].on);
+            if (op[osc].on && any)
+            {
+                const int N = 512;
+                for (int o = 0; o < 3; ++o) op[o].ratio = std::exp2 ((semisOf[o] - semisOf[osc]) / 12.0f);
+                fmCycle.assign ((size_t) N, 0.0f);
+                for (int t = 0; t < N * 4; ++t)
+                {
+                    float next[3] = {};
+                    for (int o = 0; o < 3; ++o)
+                    {
+                        if (! op[o].on) continue;
+                        float inc = op[o].ratio / (float) N, sum = 0.0f;
+                        for (int m = 0; m < 3; ++m) if (op[o].fm[m] != 0.0f && op[m].on) sum += op[o].fm[m] * prev[m];
+                        if (sum != 0.0f && op[o].fmType == 1) inc *= std::exp2 (juce::jlimit (-8.0f, 4.0f, sum * 3.0f));
+                        ph[o] = oscFrac (ph[o] + inc);
+                        float pp = ph[o];
+                        if (sum != 0.0f && op[o].fmType == 0) pp = oscFrac (pp + sum * 3.0f + 1.0f);
+                        float modSin = 0.0f;
+                        if (op[o].fx == OfxPhaseMod || op[o].fx == OfxRingMod)
+                        {
+                            opp[o] = oscFrac (opp[o] + inc * oscFxModRatio (op[o].fx, op[o].fxTune));
+                            modSin = std::sin (kTwoPi * opp[o]);
+                        }
+                        pp = oscFxPhase (op[o].fx, op[o].fxAmt, op[o].fxTune, pp, modSin);
+                        float x = us[o] != nullptr ? us[o]->read (2, op[o].morph, pp) : wt.read (op[o].table, 0, op[o].morph, pp);
+                        x = oscFxSample (op[o].fx, op[o].fxAmt, x, modSin, oscFxTubeNorm (op[o].fxAmt));
+                        next[o] = x;
+                    }
+                    for (int o = 0; o < 3; ++o) prev[o] = next[o];
+                    if (t >= N * 3) fmCycle[(size_t) (t - N * 3)] = next[osc];
+                }
+                for (int m = 0; m < 3; ++m)
+                    if (op[osc].fm[m] != 0.0f && op[m].on)
+                        fmFrom += (fmFrom.isEmpty() ? "" : ", ") + juce::String::charToString (kLetters[m]);
+            }
+        }
         juce::Path p, fill, dry;
         const int n = std::max (2, (int) r.getWidth());
         const float midY = r.getCentreY(), amp = r.getHeight() * 0.36f;
         for (int x = 0; x < n; ++x)
         {
             const float cyc = (float) x / (float) n;
-            if (fxType != OfxNone)
+            if (fxType != OfxNone || ! fmCycle.empty())
             {
-                float yd = midY - rawRead (oscFrac (cyc + phase)) * amp;
+                float yd = midY - (fmCycle.empty() ? rawRead (oscFrac (cyc + phase)) : shaped (cyc)) * amp;
                 if (x == 0) dry.startNewSubPath (r.getX(), yd); else dry.lineTo (r.getX() + (float) x, yd);
             }
-            float v = shaped (cyc);
+            float v = fmCycle.empty() ? shaped (cyc) : fmCycle[(size_t) juce::jmin ((int) fmCycle.size() - 1, (int) (cyc * (float) fmCycle.size()))];
             float y = midY - juce::jlimit (-1.4f, 1.4f, v) * amp;
             if (x == 0) { p.startNewSubPath (r.getX(), y); fill.startNewSubPath (r.getX(), midY); fill.lineTo (r.getX(), y); }
             else { p.lineTo (r.getX() + (float) x, y); fill.lineTo (r.getX() + (float) x, y); }
         }
         fill.lineTo (r.getRight(), midY); fill.closeSubPath();
         auto c = on ? col::blue : col::dim;
-        if (fxType != OfxNone) { g.setColour (col::dim.withAlpha (0.55f)); g.strokePath (dry, juce::PathStrokeType (1.0f)); }   // the waveform before the effect
+        if (fxType != OfxNone || ! fmCycle.empty()) { g.setColour (col::dim.withAlpha (0.55f)); g.strokePath (dry, juce::PathStrokeType (1.0f)); }   // the waveform before the effect
         g.setColour (c.withAlpha (0.22f)); g.fillPath (fill);
         g.setColour (c); g.strokePath (p, juce::PathStrokeType (1.4f));
 
@@ -121,10 +181,13 @@ public:
         g.setColour (userName.isNotEmpty() && user == nullptr ? col::pink : c);
         g.setFont (font (14.0f));
         g.drawText (label, r.reduced (8.0f, 4.0f), juce::Justification::topLeft);
-        if (fxType != OfxNone)
+        juce::String applied;
+        if (! fmCycle.empty()) applied = juce::String (fmTypeName ((int) rawParam (proc.apvts, base + "fmt"))) + " from " + fmFrom;
+        if (fxType != OfxNone) applied += (applied.isEmpty() ? "" : "  +  ") + juce::String (oscFxName (fxType));
+        if (applied.isNotEmpty())
         {
             g.setColour (col::dim); g.setFont (font (12.0f));
-            g.drawText (juce::String (oscFxName (fxType)) + " applied", r.reduced (8.0f, 4.0f), juce::Justification::bottomLeft);
+            g.drawText (applied + " applied", r.reduced (8.0f, 4.0f), juce::Justification::bottomLeft);
         }
     }
 

@@ -218,7 +218,7 @@ private:
 class OscPanel : public juce::Component
 {
 public:
-    OscPanel (StratumProcessor& p, int o, std::vector<Ctl*>& all) : osc (o), wave (p, o)
+    OscPanel (StratumProcessor& p, int o, std::vector<Ctl*>& all) : proc (p), osc (o), wave (p, o)
     {
         R.parent = this;
         auto& A = p.apvts;
@@ -239,6 +239,10 @@ public:
         fxType = &R.make<Combo> (A, names (OfxNum, oscFxName), pre + "fx");
         fxAmt = &R.make<Knob> (A, "FX Amt", pre + "fxa");
         fxTune = &R.make<Knob> (A, "FX Tune", pre + "fxt");
+        fmOn = &R.make<Toggle> (A, "FM", "fm_on");
+        fmType = &R.make<Combo> (A, names (2, fmTypeName), pre + "fmt");
+        const char* fmSfx[3] = { "fma", "fmb", "fmc" }; const char* fmLbl[3] = { "In A", "In B", "In C" };
+        for (int i = 0; i < 3; ++i) fmIn[i] = &R.make<Knob> (A, fmLbl[i], pre + fmSfx[i]);
         bal = &R.make<Knob> (A, "Balance", pre + "bal");
         vol = &R.make<Knob> (A, "Volume", pre + "vol");
         vol->modTarget = TgOscVol1 + osc;
@@ -251,7 +255,19 @@ public:
     }
 
     Knob* volKnob() { return vol; }
-    void setLayer (int l) { wave.layer = l; }
+    void setLayer (int l) { wave.layer = l; layer = l; shownFm = -1; }
+
+    // FM mode swaps the bass/treble knobs and the "skip" switch for the FM routing controls.
+    void refreshMode()
+    {
+        const int fm = rawParam (proc.apvts, layerId (layer, "fm_on")) > 0.5f ? 1 : 0;
+        if (fm == shownFm) return;
+        shownFm = fm;
+        skip->setVisible (! fm); bass->setVisible (! fm); treb->setVisible (! fm);
+        fmType->setVisible (fm);
+        for (auto* k : fmIn) k->setVisible (fm);
+        repaint();
+    }
     void paint (juce::Graphics& g) override { panelBackground (g, getLocalBounds()); }
 
     void resized() override
@@ -261,7 +277,9 @@ public:
         on->setBounds (top.removeFromLeft (18));
         title.setBounds (top.removeFromLeft (66));
         semi->setBounds (top.removeFromLeft (84)); cent->setBounds (top.removeFromLeft (92));
-        key->setBounds (top.removeFromLeft (56)); skip->setBounds (top.removeFromLeft (56));
+        key->setBounds (top.removeFromLeft (56));
+        fmOn->setBounds (top.removeFromLeft (50));
+        { auto extra = top.removeFromLeft (92); skip->setBounds (extra.removeFromLeft (56)); fmType->setBounds (extra.reduced (0, 1)); }
         fxType->setBounds (top.removeFromRight (130).reduced (0, 1));
         r.removeFromTop (4);
 
@@ -270,6 +288,8 @@ public:
         auto row1 = left.removeFromTop (62), row2 = left;
         det->setBounds (row1.removeFromLeft (61)); spr->setBounds (row1);
         bass->setBounds (row2.removeFromLeft (61)); treb->setBounds (row2);
+        { const int w = 40; auto fr = juce::Rectangle<int> (left.getX(), row2.getY(), 122, row2.getHeight());
+          for (int i = 0; i < 3; ++i) fmIn[i]->setBounds (fr.getX() + i * 41, fr.getY(), w, fr.getHeight()); }
 
         auto right = r.removeFromRight (122);
         auto rr1 = right.removeFromTop (62), rr2 = right;
@@ -283,14 +303,16 @@ public:
     }
 
 private:
-    int osc;
+    StratumProcessor& proc;
+    int osc, layer = 0, shownFm = -1;
     Registry R;
     WaveDisplay wave;
     juce::Label title;
-    Toggle *on, *key, *skip;
+    Toggle *on, *key, *skip, *fmOn;
+    Knob* fmIn[3];
     DragLabel *semi, *cent, *uni, *morph, *phase, *rnd;
     Knob *det, *spr, *bass, *treb, *fxAmt, *fxTune, *bal, *vol;
-    Combo* fxType;
+    Combo *fxType, *fmType;
 };
 
 //==============================================================================
@@ -1024,7 +1046,7 @@ struct StratumEditor::LayerView : public juce::Component
         fx->refreshLabels();
         shaping->updateWidthLabel ((int) rawParam (proc.apvts, layerId (layer, "f_type")));
         fx->refreshSlotButtons();
-        for (auto* o : osc) o->repaint();
+        for (auto* o : osc) { o->refreshMode(); o->repaint(); }
         mod->display.repaint();
     }
 

@@ -12,6 +12,9 @@ all code, wavetables and presets here were written from scratch.
 **Per layer (x8)**
 - 3 oscillators with morphable wavetables (8 built-in tables, generated at start-up with band-limited
   mip levels), up to 8 unison voices, detune/spread, bass/treble tone control, phase and phase randomisation
+- FM mode (switch on any layer; layer 8 starts in it): the three oscillators modulate each other with free
+  routing (every oscillator has In A / In B / In C amounts, so loops and self-feedback work), linear or exponential
+  FM per oscillator; a silent-volume oscillator works as a pure modulator
 - Oscillator FX: tube drive, phase modulation, ring modulation, hard sync, bend, mirror, noise, chaos phase; the oscillator display shows the effect on the waveform (dry waveform drawn faintly behind it)
 - 20 filter types: LP/HP 6/12/24, band-pass, notch, peak, ladder, comb, formant, plus Z-Plane Vowel (three
   morphing formants), Z-Plane Sweep (moving pole pair), Morph LP-BP-HP, Morph Comb (signed feedback), Phase Filter

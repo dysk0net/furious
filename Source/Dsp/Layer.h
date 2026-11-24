@@ -15,6 +15,8 @@ namespace stratum
 //==============================================================================
 enum OscFx { OfxNone = 0, OfxTube, OfxPhaseMod, OfxRingMod, OfxHardSync, OfxBend, OfxMirror, OfxNoise, OfxChaos, OfxNum };
 
+inline const char* fmTypeName (int t) { return t == 0 ? "Linear FM" : "Exponential FM"; }
+
 inline const char* oscFxName (int t)
 {
     static const char* n[OfxNum] = { "None", "Tube", "Phase Mod", "Ring Mod", "Hard Sync", "Bend", "Mirror", "Noise", "Chaos Phase" };
@@ -37,6 +39,8 @@ struct OscParams
     float bass = 0.0f, treble = 0.0f;
     int fx = OfxNone;
     float fxAmt = 0.0f, fxTune = 0.5f;
+    float fmIn[kOscs] = {};            // FM mode: how much oscillator A / B / C modulates this one (-1..1; itself = feedback)
+    int fmType = 0;                    // FM mode: 0 = linear (phase) FM, 1 = exponential (pitch) FM for everything it receives
     const UserTable* user = nullptr;   // set by the host every block; when set it replaces the factory table
 };
 
@@ -150,6 +154,7 @@ struct ArpParams
 struct LayerParams
 {
     bool enabled = false;
+    bool fmMode = false;              // the three oscillators modulate each other (see OscParams::fmIn)
     OscParams osc[kOscs];
     FilterParams filter;
     InsertParams insert;
@@ -286,6 +291,7 @@ private:
         StepSeq seq[kSeqs];
         float phase[kOscs][kMaxUnison] = {};
         float opPhase[kOscs][kMaxUnison] = {};
+        float fmPrev[kOscs][kMaxUnison] = {};      // last output of every oscillator voice, the FM source for the next sample
         float tone[kOscs][2][2] = {};
         float noiseLp[kOscs] = {};
         StereoFilter filter;
@@ -340,6 +346,7 @@ private:
                 float rnd = P.osc[o].random * v.rng.next01();
                 v.phase[o][u] = std::fmod (P.osc[o].phase + rnd + (P.osc[o].random > 0.0f ? (float) u * 0.137f * P.osc[o].random : 0.0f), 1.0f);
                 v.opPhase[o][u] = 0.0f;
+                v.fmPrev[o][u] = 0.0f;
             }
             for (auto& c : v.tone[o]) c[0] = c[1] = 0.0f;
         }
@@ -554,7 +561,7 @@ private:
             oc[o].morph = clampf (op.morph + tg[TgOscMorph1 + o], 0.0f, 1.0f);
             oc[o].vol = clampf (op.volume + tg[TgOscVol1 + o], 0.0f, 1.5f);
             oc[o].detuneCents = 75.0f * clampf (op.detune + tg[TgDetune], 0.0f, 1.0f);
-            const float mipFreq = oc[o].freq * (1.0f + oc[o].detuneCents * 0.0006f) * (op.fx == OfxHardSync ? 1.0f + op.fxAmt * 7.0f : 1.0f);
+            const float mipFreq = oc[o].freq * (1.0f + oc[o].detuneCents * 0.0006f) * (op.fx == OfxHardSync ? 1.0f + op.fxAmt * 7.0f : 1.0f) * (P.fmMode ? 2.0f : 1.0f);
             oc[o].user = op.user;
             oc[o].mip = op.user != nullptr ? UserTable::mipFor (mipFreq, fs) : WaveTables::mipFor (mipFreq, fs);
             oc[o].nu = std::max (1, std::min (op.unison, kMaxUnison));
@@ -574,6 +581,7 @@ private:
         for (int i = 0; i < m; ++i)
         {
             float mixL = 0.0f, mixR = 0.0f, byL = 0.0f, byR = 0.0f;
+            float fmNext[kOscs][kMaxUnison] = {};
             for (int o = 0; o < kOscs; ++o)
             {
                 if (! oc[o].on) continue;
@@ -582,10 +590,17 @@ private:
                 float uL = 0.0f, uR = 0.0f;
                 for (int u = 0; u < nu; ++u)
                 {
-                    const float inc = oc[o].inc[u];
+                    float inc = oc[o].inc[u];
+                    // FM mode: the other oscillators' last outputs (free routing, so loops and feedback work)
+                    float fmSum = 0.0f;
+                    if (P.fmMode)
+                        for (int m = 0; m < kOscs; ++m)
+                            if (op.fmIn[m] != 0.0f && oc[m].on) fmSum += op.fmIn[m] * v.fmPrev[m][std::min (u, oc[m].nu - 1)];
+                    if (fmSum != 0.0f && op.fmType == 1) inc *= std::exp2 (clampf (fmSum * 3.0f, -8.0f, 4.0f));   // exponential FM: pitch
                     float& ph = v.phase[o][u];
                     ph += inc; if (ph >= 1.0f) ph -= std::floor (ph);
                     float p = ph;
+                    if (fmSum != 0.0f && op.fmType == 0) p = frac (p + fmSum * 3.0f + 1.0f);                      // linear FM: phase
                     float& opp = v.opPhase[o][u];
                     float x;
                     switch (op.fx)
@@ -613,6 +628,7 @@ private:
                         }
                         default: break;
                     }
+                    fmNext[o][u] = x;
                     uL += x * oc[o].gl[u];
                     uR += x * oc[o].gr[u];
                 }
@@ -627,6 +643,8 @@ private:
                 uL *= oc[o].vol; uR *= oc[o].vol;
                 if (op.skipFilter) { byL += uL; byR += uR; } else { mixL += uL; mixR += uR; }
             }
+
+            if (P.fmMode) std::memcpy (v.fmPrev, fmNext, sizeof fmNext);
 
             if (P.mixOrder == 0) { v.filter.process (mixL, mixR); v.insert.process (mixL, mixR, ip, noteHz); }
             else { v.insert.process (mixL, mixR, ip, noteHz); v.filter.process (mixL, mixR); }

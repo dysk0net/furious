@@ -128,6 +128,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
 {
     static const juce::StringArray tables = makeChoices (WaveTables::T, waveName);
     static const juce::StringArray oscFx = makeChoices (OfxNum, oscFxName);
+    static const juce::StringArray fmTypes = makeChoices (2, fmTypeName);
     static const juce::StringArray fltTypes = makeChoices (FltNumTypes, filterTypeName);
     static const juce::StringArray insTypes = makeChoices (InsNumTypes, insertTypeName);
     static const juce::StringArray fxTypes = makeChoices (FxNumTypes, fxTypeName);
@@ -173,7 +174,14 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.c ("fx", "FX Type", op.fx, oscFx);
         B.f ("fxa", "FX Amount", op.fxAmt, 0.0f, 1.0f);
         B.f ("fxt", "FX Tune", op.fxTune, 0.0f, 1.0f);
+        B.f ("fma", "FM From A", op.fmIn[0], -1.0f, 1.0f);
+        B.f ("fmb", "FM From B", op.fmIn[1], -1.0f, 1.0f);
+        B.f ("fmc", "FM From C", op.fmIn[2], -1.0f, 1.0f);
+        B.c ("fmt", "FM Type", op.fmType, fmTypes);
     }
+
+    B.setPrefix (L + "_fm_", L + " FM ");
+    B.b ("on", "Mode", P.fmMode);
 
     B.setPrefix (L + "_f_", L + " Filter ");
     B.c ("type", "Type", P.filter.type, fltTypes);
@@ -320,7 +328,13 @@ inline EngineParams makeDefaultEngineParams()
     {
         LayerParams& P = E.layer[l];
         P.enabled = (l == 0);
-        P.osc[0].on = true; P.osc[0].unison = 3; P.osc[0].detune = 0.3f;
+        if (l == kLayers - 1)   // layer 8 is an FM layer: A is the carrier, B modulates it
+        {
+            P.fmMode = true;
+            P.osc[0].unison = 1; P.osc[1].on = true; P.osc[1].unison = 1; P.osc[1].volume = 0.0f; P.osc[0].fmIn[1] = 0.35f;
+            P.osc[1].semi = 12;
+        }
+        P.osc[0].on = true; if (l != kLayers - 1) { P.osc[0].unison = 3; } P.osc[0].detune = 0.3f;
         P.filter.cutoff = 0.62f; P.filter.resonance = 0.25f; P.filter.envAmount = 0.35f;
         P.env[1].decay = 0.5f; P.env[1].sustain = 0.3f;
         P.lfo[0].rateHz = 0.5f;

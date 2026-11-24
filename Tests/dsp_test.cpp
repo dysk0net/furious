@@ -590,6 +590,58 @@ int main()
         CHECK (std::fabs (oscFxSample (OfxNone, 1.0f, 0.4f, 0.9f, 1.0f) - 0.4f) < 1e-6f, "no effect leaves the sample alone");
     }
 
+    // 19. FM mode: free routing between the three oscillators, linear and exponential
+    {
+        auto setup = [&] (bool fm, int type, float aFromB, float aFromA, float bFromA)
+        {
+            initPatch (*E);
+            LayerParams& P = E->layer[0];
+            P.mod[0] = { false, 0, 0, 0.0f }; P.fx[0].type = FxNone;
+            P.filter.type = FltOff; P.env[0].attack = 0.0f;
+            P.osc[0].unison = 1; P.osc[0].volume = 0.7f; P.osc[0].table = 0; P.osc[0].morph = 0.0f;
+            P.osc[1].on = true; P.osc[1].unison = 1; P.osc[1].semi = 7; P.osc[1].volume = 0.0f; P.osc[1].table = 0; P.osc[1].morph = 0.0f;
+            P.osc[2].on = false;
+            P.fmMode = fm;
+            P.osc[0].fmType = type; P.osc[1].fmType = type;
+            P.osc[0].fmIn[1] = aFromB; P.osc[0].fmIn[0] = aFromA; P.osc[1].fmIn[0] = bFromA;
+        };
+        auto roughness = [&] (std::vector<float>& w)
+        {
+            double d = 0, e = 0;
+            for (size_t i = 8; i < w.size(); ++i) { d += std::fabs (w[i] - w[i - 2]); e += std::fabs (w[i]); }
+            return e > 0 ? d / e : 0.0;
+        };
+        auto render = [&] (Stats& st)
+        {
+            std::vector<float> w; eng->panic (); eng->noteOn (1, 45, 1.0f, *E);
+            st = renderSeconds (*eng, *E, 0.6f, fs, &w);
+            return w;
+        };
+        Stats st0, st1, st2, st3, st4;
+        setup (false, 0, 0.0f, 0.0f, 0.0f); render (st0);                 // warm-up: settles leftovers from earlier sections
+        auto w0 = render (st0);
+        setup (true, 0, 0.0f, 0.0f, 0.0f);  auto w0b = render (st1);
+        std::printf ("      (rms plain %.4f, fm no routing %.4f)\n", st0.rms, st1.rms);
+        CHECK (st0.rms > 0.01 && std::fabs (st0.rms - st1.rms) < 0.08 * st0.rms + 1e-6, "FM mode with no routing sounds like the plain oscillator, and a silent modulator stays silent");
+        setup (true, 0, 0.8f, 0.0f, 0.0f); auto wl = render (st2);
+        setup (true, 1, 0.8f, 0.0f, 0.0f); auto we = render (st3);
+        const double r0 = roughness (w0), rl = roughness (wl), re = roughness (we);
+        std::printf ("      (roughness: plain %.3f  linear FM %.3f  exponential FM %.3f)\n", r0, rl, re);
+        CHECK (st2.bad == 0 && st3.bad == 0 && rl > r0 * 1.15, "linear FM adds harmonics");
+        CHECK (re > r0 * 1.05 && std::fabs (re - rl) > 0.01, "exponential FM adds harmonics and differs from linear");
+        setup (true, 0, 0.5f, 0.6f, 0.4f); auto wf = render (st4);
+        CHECK (st4.bad == 0 && st4.peak < 4.0 && roughness (wf) > r0, "feedback and a modulator that is itself modulated stay stable");
+        // a modulator that is heard (volume up) still works, and the third oscillator can be routed in
+        setup (true, 0, 0.6f, 0.0f, 0.0f); E->layer[0].osc[2].on = true; E->layer[0].osc[2].volume = 0.0f; E->layer[0].osc[2].semi = 19;
+        E->layer[0].osc[1].fmIn[2] = 0.5f; E->layer[0].osc[0].fmIn[2] = 0.4f; E->layer[0].osc[2].fmIn[0] = 0.3f;
+        auto w3 = render (st4);
+        CHECK (st4.bad == 0 && st4.rms > 0.01, "three oscillators routed freely stay stable");
+        // the oscillator effects still act inside an FM oscillator
+        setup (true, 0, 0.6f, 0.0f, 0.0f); E->layer[0].osc[0].fx = OfxTube; E->layer[0].osc[0].fxAmt = 0.8f;
+        auto wt = render (st4);
+        CHECK (st4.bad == 0 && wt != wl, "oscillator effects still apply in FM mode");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

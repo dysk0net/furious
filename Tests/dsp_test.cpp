@@ -487,6 +487,72 @@ int main()
                "the arpeggiator snaps its notes to the chosen scale");
     }
 
+    // 15. new filter types: measured response with a sine probe
+    {
+        auto gainAt = [&] (int type, float cutoff, float res, float width, float hz)
+        {
+            StereoFilter f; f.prepare (fs);
+            FilterParams fp; fp.type = type; fp.cutoff = cutoff; fp.resonance = res; fp.width = width;
+            f.setup (fp, cutoffToHz (cutoff));
+            double acc = 0; int n = (int) fs;
+            for (int i = 0; i < n; ++i)
+            {
+                float l = 0.3f * std::sin (kTwoPi * hz * (float) i / fs), r = l;
+                f.process (l, r);
+                if (i > n / 2) acc += (double) l * l;
+            }
+            return std::sqrt (acc / (n / 2)) / (0.3 / std::sqrt (2.0));
+        };
+        const float c = 0.5f;                                   // ~ 800 Hz
+        const float fc = cutoffToHz (c);
+        double lo = gainAt (FltMorph, c, 0.2f, 0.0f, fc * 0.1f), hi = gainAt (FltMorph, c, 0.2f, 0.0f, fc * 8.0f);
+        CHECK (lo > 0.7 && hi < 0.2, "Morph at 0 is a lowpass");
+        lo = gainAt (FltMorph, c, 0.2f, 1.0f, fc * 0.1f); hi = gainAt (FltMorph, c, 0.2f, 1.0f, fc * 8.0f);
+        CHECK (lo < 0.2 && hi > 0.7, "Morph at 1 is a highpass");
+        double mid = gainAt (FltMorph, c, 0.6f, 0.5f, fc), off = gainAt (FltMorph, c, 0.6f, 0.5f, fc * 6.0f);
+        CHECK (mid > off * 2.0, "Morph at 0.5 is a bandpass");
+
+        // vowel: the response must change as the vowel position moves
+        double a1 = gainAt (FltZVowel, 0.6f, 0.5f, 0.0f, 800.0f), a2 = gainAt (FltZVowel, 0.6f, 0.5f, 1.0f, 800.0f);
+        CHECK (std::fabs (a1 - a2) > 0.05, "Z-Plane Vowel changes with the vowel position");
+        double z0 = gainAt (FltZSweep, c, 0.3f, 0.0f, fc * 8.0f), z1 = gainAt (FltZSweep, c, 0.3f, 1.0f, fc * 2.0f);
+        CHECK (z0 < 0.2 && z1 > 0.05, "Z-Plane Sweep: lowpass at 0, resonance moves up at 1");
+
+        // phase filter: notches appear in the passband
+        double minG = 10, maxG = 0;
+        for (float hz = 100.0f; hz < 8000.0f; hz *= 1.15f) { double g2 = gainAt (FltPhase, c, 0.0f, 0.5f, hz); minG = std::min (minG, g2); maxG = std::max (maxG, g2); }
+        CHECK (minG < 0.3 && maxG > 0.8, "Phase Filter has notches and a flat top");
+
+        // comb polarity: negative feedback shifts the peaks by half a period
+        float f0 = cutoffToHz (0.45f);
+        double pos = gainAt (FltMorphComb, 0.45f, 0.6f, 1.0f, f0), neg = gainAt (FltMorphComb, 0.45f, 0.6f, 0.0f, f0);
+        CHECK (pos > neg * 1.5, "Morph Comb: positive feedback peaks at the fundamental, negative notches it");
+
+        // diode: lowpass character, bells: resonance at the modal ratios
+        double dl = gainAt (FltDiode, c, 0.3f, 0.3f, fc * 0.1f), dh = gainAt (FltDiode, c, 0.3f, 0.3f, fc * 8.0f);
+        CHECK (dl > dh * 5.0, "Acid Diode lowpasses");
+        double b1 = gainAt (FltBells, c, 0.5f, 1.0f, fc), bo = gainAt (FltBells, c, 0.5f, 1.0f, fc * 1.6f);
+        CHECK (b1 > bo * 3.0, "Bell Resonators ring at the fundamental, not between modes");
+        CHECK (FltNumTypes == 20, "20 filter types");
+    }
+
+    // 16. effect reordering
+    {
+        int src[kFxSlots];
+        fxMoveOrder (1, 0, src);
+        CHECK (src[0] == 1 && src[1] == 0 && src[2] == 2 && src[6] == 6, "moving slot 2 to slot 1 swaps them");
+        fxMoveOrder (0, 3, src);
+        CHECK (src[0] == 1 && src[1] == 2 && src[2] == 3 && src[3] == 0 && src[4] == 4, "moving slot 1 to slot 4 shifts the rest up");
+        fxMoveOrder (5, 5, src);
+        bool same = true; for (int i = 0; i < kFxSlots; ++i) same = same && src[i] == i;
+        CHECK (same, "moving a slot onto itself changes nothing");
+        CHECK (fxNewPosition (0, 0, 3) == 3 && fxNewPosition (2, 0, 3) == 1 && fxNewPosition (6, 0, 3) == 6, "new positions follow the move");
+        bool perm = true;
+        for (int a = 0; a < kFxSlots; ++a) for (int b = 0; b < kFxSlots; ++b)
+        { fxMoveOrder (a, b, src); int seen = 0; for (int i = 0; i < kFxSlots; ++i) seen |= 1 << src[i]; perm = perm && seen == (1 << kFxSlots) - 1; }
+        CHECK (perm, "every move is a permutation");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

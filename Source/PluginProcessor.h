@@ -74,6 +74,10 @@ public:
     // Returns an error message, or an empty string when the table was loaded.
     juce::String setUserWavetable (int layer, int osc, const juce::String& relativePath);
     void clearUserWavetable (int layer, int osc);
+
+    // Moves the effect in slot `from` to slot `to` of a layer; the ones in between shift by one.
+    // Settings, the trancegate pattern and modulation routes that aim at an effect's mix all follow the effect.
+    void moveEffect (int layer, int from, int to);
     juce::String getUserWavetableName (int layer, int osc) const { return info.userTable[layer][osc]; }
     std::shared_ptr<stratum::UserTable> getUserWavetable (int layer, int osc) const { return bank.getShared (layer * stratum::kOscs + osc); }
 

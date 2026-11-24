@@ -364,6 +364,54 @@ void StratumProcessor::clearUserWavetable (int layer, int osc)
     bank.collect();
 }
 
+void StratumProcessor::moveEffect (int layer, int from, int to)
+{
+    if (layer < 0 || layer >= kLayers || from == to || from < 0 || to < 0 || from >= kFxSlots || to >= kFxSlots) return;
+    int src[kFxSlots];
+    fxMoveOrder (from, to, src);
+
+    auto setPlain = [this] (const juce::String& id, float plain)
+    {
+        if (auto* p = apvts.getParameter (id))
+        {
+            const float n = p->convertTo0to1 (plain);
+            if (std::abs (p->getValue() - n) < 1.0e-6f) return;
+            p->beginChangeGesture(); p->setValueNotifyingHost (n); p->endChangeGesture();
+        }
+    };
+    auto plainOf = [this] (const juce::String& id) -> float
+    {
+        if (auto* p = apvts.getParameter (id)) return p->convertFrom0to1 (p->getValue());
+        return 0.0f;
+    };
+
+    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d", "div", "len" };
+    float old[kFxSlots][8];
+    for (int k = 0; k < kFxSlots; ++k)
+        for (int j = 0; j < 8; ++j)
+            old[k][j] = plainOf (layerId (layer, "x" + juce::String (k + 1) + "_" + sfx[j]));
+    for (int i = 0; i < kFxSlots; ++i)
+        for (int j = 0; j < 8; ++j)
+            setPlain (layerId (layer, "x" + juce::String (i + 1) + "_" + sfx[j]), old[src[i]][j]);
+
+    // trancegate patterns are not host parameters
+    auto& fxp = engineParams.layer[layer].fx;
+    float gates[kFxSlots][2][kMaxSteps];
+    for (int k = 0; k < kFxSlots; ++k)
+        for (int c = 0; c < 2; ++c) std::copy (fxp[k].gate[c], fxp[k].gate[c] + kMaxSteps, gates[k][c]);
+    for (int i = 0; i < kFxSlots; ++i)
+        for (int c = 0; c < 2; ++c) std::copy (gates[src[i]][c], gates[src[i]][c] + kMaxSteps, fxp[i].gate[c]);
+
+    // modulation routes to an effect's mix follow it
+    for (int j = 0; j < kModSlots; ++j)
+    {
+        const juce::String id = layerId (layer, "r" + juce::String (j + 1) + "_tgt");
+        const int t = (int) std::lround (plainOf (id));
+        if (t >= TgFx1Mix && t <= TgFx7Mix)
+            setPlain (id, (float) (TgFx1Mix + fxNewPosition (t - TgFx1Mix, from, to)));
+    }
+}
+
 // Re-applies info.userTable to the audio engine (after a preset or project is loaded).
 // A file that cannot be found keeps its name, so the editor can show it as missing.
 void StratumProcessor::reloadUserWavetables()

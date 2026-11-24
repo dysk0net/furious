@@ -45,6 +45,24 @@ struct FxParams
     float gate[2][kMaxSteps] = {};        // trancegate lanes, 0 or 1
 };
 
+// Moving the effect in slot `from` to slot `to` (the ones in between shift by one). Fills src[i] with the old slot
+// whose contents end up in slot i.
+inline void fxMoveOrder (int from, int to, int* src)
+{
+    from = std::min (std::max (from, 0), kFxSlots - 1);
+    to = std::min (std::max (to, 0), kFxSlots - 1);
+    int tmp[kFxSlots], n = 0;
+    for (int i = 0; i < kFxSlots; ++i) if (i != from) tmp[n++] = i;
+    for (int i = 0, j = 0; i < kFxSlots; ++i) src[i] = i == to ? from : tmp[j++];
+}
+inline int fxNewPosition (int oldSlot, int from, int to)
+{
+    int src[kFxSlots];
+    fxMoveOrder (from, to, src);
+    for (int i = 0; i < kFxSlots; ++i) if (src[i] == oldSlot) return i;
+    return oldSlot;
+}
+
 class FxSlot
 {
 public:

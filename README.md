@@ -13,8 +13,10 @@ all code, wavetables and presets here were written from scratch.
 - 3 oscillators with morphable wavetables (8 built-in tables, generated at start-up with band-limited
   mip levels), up to 8 unison voices, detune/spread, bass/treble tone control, phase and phase randomisation
 - Oscillator FX: tube drive, phase modulation, ring modulation, hard sync, bend, mirror, noise, chaos phase
-- 13 filter types (LP 6/12/24, HP 6/12/24, band-pass, notch, peak, ladder, comb, formant) with envelope,
-  keyfollow and treble controls; "skip to mix" per oscillator
+- 20 filter types: LP/HP 6/12/24, band-pass, notch, peak, ladder, comb, formant, plus Z-Plane Vowel (three
+  morphing formants), Z-Plane Sweep (moving pole pair), Morph LP-BP-HP, Morph Comb (signed feedback), Phase Filter
+  (all-pass chain), Acid Diode (nonlinear ladder) and Bell Resonators (harmonic to inharmonic modes); the Width
+  knob is relabelled per type. Envelope, keyfollow and treble controls; "skip to mix" per oscillator
 - 7 insert types (tube, overdrive, tone fuzz, bitcrusher, exciter, ring mod), filter/insert order switch
 - 4 envelopes (delay, attack, level, decay, sustain, release, per-stage slopes), 4 dual-waveform LFOs
   (bend, phase, fade, tempo sync), 4 step sequencers (32 steps, loop point, oneshot, smoothing)
@@ -24,7 +26,8 @@ all code, wavetables and presets here were written from scratch.
   Phrygian, Blues, Phrygian Dominant, Double Harmonic, Hungarian Minor, Hirajoshi and Whole Tone, in any key.
   Notes snap to the nearest scale note; a note exactly halfway between two goes to the lower one
 - Mono legato with glide, voice limit, MIDI channel and key range per layer
-- 7-slot effect rack: reverb, delay, chorus, phaser, distortion, bitcrusher, trancegate (2 x 32 steps),
+- 7-slot effect rack (drag a slot up or down in the list to reorder; its settings, trancegate pattern and
+  mod routes move with it): reverb, delay, chorus, phaser, distortion, bitcrusher, trancegate (2 x 32 steps),
   compressor, sidechain ducker, balancer
 
 **Master**

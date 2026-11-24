@@ -8,14 +8,35 @@ namespace stratum
 enum FilterType
 {
     FltOff = 0, FltLP12, FltLP24, FltHP12, FltHP24, FltBP12, FltNotch, FltPeak,
-    FltLP6, FltHP6, FltLadder, FltComb, FltFormant, FltNumTypes
+    FltLP6, FltHP6, FltLadder, FltComb, FltFormant,
+    FltZVowel, FltZSweep, FltMorph, FltMorphComb, FltPhase, FltDiode, FltBells, FltNumTypes
 };
 
 inline const char* filterTypeName (int t)
 {
     static const char* n[FltNumTypes] = { "Off", "LP-12", "LP-24", "HP-12", "HP-24", "BP-12", "Notch",
-                                          "Peak", "LP-6", "HP-6", "Ladder", "Comb", "Formant" };
+                                          "Peak", "LP-6", "HP-6", "Ladder", "Comb", "Formant",
+                                          "Z-Plane Vowel", "Z-Plane Sweep", "Morph LP-BP-HP", "Morph Comb",
+                                          "Phase Filter", "Acid Diode", "Bell Resonators" };
     return n[std::min (std::max (t, 0), (int) FltNumTypes - 1)];
+}
+
+// What the "Width" knob does for each filter type.
+inline const char* filterWidthLabel (int t)
+{
+    switch (t)
+    {
+        case FltBP12: case FltNotch: case FltPeak: return "Width";
+        case FltComb: return "Damping";
+        case FltFormant: case FltZVowel: return "Vowel";
+        case FltZSweep: return "Morph";
+        case FltMorph: return "Shape";
+        case FltMorphComb: return "Polarity";
+        case FltPhase: return "Spread";
+        case FltDiode: return "Drive";
+        case FltBells: return "Inharm.";
+        default: return "Width";
+    }
 }
 
 struct FilterParams
@@ -53,7 +74,7 @@ public:
     }
     void reset()
     {
-        for (auto& c : ch) { c.a.reset(); c.b.reset(); c.c.reset(); c.d.reset(); c.one = 0; c.comb.fill (0.0f); c.combPos = 0; c.ladder[0] = c.ladder[1] = c.ladder[2] = c.ladder[3] = 0; }
+        for (auto& c : ch) c = Chan();
     }
 
     // Set coefficients from a cutoff frequency in Hz and the parameter block.
@@ -72,6 +93,9 @@ public:
         vowel = clampf (p.width, 0.0f, 1.0f);
         ladK = 4.0f * res * 0.95f;
         onePoleG = g / (1.0f + g);
+        wid = clampf (p.width, 0.0f, 1.0f);
+        res01 = res;
+        setupExtra (fc);
     }
 
     inline void process (float& l, float& r)
@@ -92,11 +116,61 @@ private:
         int combPos = 0;
         float combLp = 0.0f;
         float trebleLp = 0.0f;
+        Svf e, f;
+        float ap[4] = {};
+        float apFb = 0.0f;
+        float diode[4] = {};
     };
     Chan ch[2];
     float fs = 44100.0f, g = 0.1f, r2 = 1.0f, r2b = 1.0f, treble = 0.0f;
     float combDelay = 100.0f, combFb = 0.5f, combDamp = 0.5f, vowel = 0.0f, ladK = 0.0f, onePoleG = 0.1f;
     int type = FltLP24;
+    float wid = 0.5f, res01 = 0.2f, gB = 0.1f, apA[4] = {}, zg[3] = {}, bellG[4] = {}, bellW[4] = {}, bellR = 0.1f;
+
+    void setupExtra (float fc)
+    {
+        const float nyq = 0.45f * fs;
+        if (type == FltZVowel)
+        {
+            // three formants morphing across a e i o u; the cutoff shifts the whole set (a bigger or smaller mouth)
+            static const float F[5][3] = { { 800, 1150, 2900 }, { 400, 1700, 2600 }, { 270, 2140, 2950 },
+                                           { 450, 800, 2830 }, { 325, 700, 2700 } };
+            float pos = wid * 4.0f;
+            int i0 = std::min ((int) pos, 3);
+            float fr = pos - (float) i0;
+            float shift = clampf (std::sqrt (fc / 2000.0f), 0.4f, 2.2f);
+            for (int k = 0; k < 3; ++k)
+                zg[k] = std::tan (kPi * std::min (lerpf (F[i0][k], F[i0 + 1][k], fr) * shift, nyq) / fs);
+        }
+        else if (type == FltZSweep)
+            gB = std::tan (kPi * std::min (fc * (1.0f + wid * 2.5f), nyq) / fs);
+        else if (type == FltPhase)
+            for (int k = 0; k < 4; ++k)
+            {
+                float gk = std::tan (kPi * std::min (fc * (1.0f + wid * 0.9f * (float) k), nyq) / fs);
+                apA[k] = (gk - 1.0f) / (gk + 1.0f);
+            }
+        else if (type == FltBells)
+        {
+            // modal ratios of a struck bar/bell, morphing from a harmonic series (0) to inharmonic (1)
+            static const float inh[4] = { 1.0f, 2.76f, 5.40f, 8.93f };
+            static const float har[4] = { 1.0f, 2.0f, 3.0f, 4.0f };
+            static const float wt[4] = { 1.0f, 0.8f, 0.6f, 0.45f };
+            for (int k = 0; k < 4; ++k)
+            {
+                bellG[k] = std::tan (kPi * std::min (fc * lerpf (har[k], inh[k], wid), nyq) / fs);
+                bellW[k] = wt[k];
+            }
+            bellR = 0.5f * std::pow (0.01f, res01) + 0.01f;       // 1/Q: gentle .. long ringing
+        }
+    }
+
+    static inline float fastTanh (float x)
+    {
+        x = clampf (x, -3.0f, 3.0f);
+        float x2 = x * x;
+        return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+    }
 
     inline float run (Chan& c, float x)
     {
@@ -153,8 +227,86 @@ private:
                 out = (b1 + 0.7f * b2) * 0.5f;
                 break;
             }
+            case FltZVowel:
+            {
+                float l1, b1, h1, l2, b2, h2, l3, b3, h3;
+                const float rq = 0.12f + r2 * 0.25f;             // resonance sharpens the formants
+                c.a.tick (x, zg[0], rq, l1, b1, h1);
+                c.b.tick (x, zg[1], rq, l2, b2, h2);
+                c.c.tick (x, zg[2], rq, l3, b3, h3);
+                out = (b1 + 0.7f * b2 + 0.4f * b3) * rq * 1.2f;
+                break;
+            }
+            case FltZSweep:
+            {
+                float l1, b1, h1, l2, b2, h2;
+                c.a.tick (x, g, r2, l1, b1, h1);
+                c.b.tick (l1, gB, r2, l2, b2, h2);
+                out = lerpf (l2, (b1 + b2) * r2 * 0.7f, wid);
+                break;
+            }
+            case FltMorph:
+            {
+                // one state-variable filter blended lowpass -> bandpass -> highpass
+                c.a.tick (x, g, r2, lp, bp, hp);
+                float bn = bp * r2;
+                out = wid < 0.5f ? lerpf (lp, bn, wid * 2.0f) : lerpf (bn, hp, wid * 2.0f - 1.0f);
+                break;
+            }
+            case FltMorphComb:
+            {
+                int d = (int) combDelay;
+                float frac = combDelay - (float) d;
+                int i0 = (c.combPos - d + kCombMax) & (kCombMax - 1);
+                int i1 = (i0 - 1 + kCombMax) & (kCombMax - 1);
+                float del = c.comb[(size_t) i0] * (1.0f - frac) + c.comb[(size_t) i1] * frac;
+                float fb = (wid * 2.0f - 1.0f) * clampf (0.2f + 0.78f * res01, 0.0f, 0.95f);   // negative = odd harmonics only
+                float w = x + del * fb;
+                c.comb[(size_t) c.combPos] = fastTanh (w);
+                c.combPos = (c.combPos + 1) & (kCombMax - 1);
+                out = w * 0.6f;
+                break;
+            }
+            case FltPhase:
+            {
+                float y = x + c.apFb * res01 * 0.9f;
+                for (int k = 0; k < 4; ++k)
+                {
+                    float o = apA[k] * y + c.ap[k];
+                    c.ap[k] = y - apA[k] * o;
+                    y = o;
+                }
+                c.apFb = fastTanh (y);
+                out = 0.5f * (x + y);
+                break;
+            }
+            case FltDiode:
+            {
+                float drv = 1.0f + wid * 3.0f;
+                float in = fastTanh (x * drv - ladK * 0.9f * c.diode[3]);
+                float gg = onePoleG;
+                c.diode[0] += gg * (in - c.diode[0]);
+                c.diode[1] += gg * (fastTanh (c.diode[0]) - c.diode[1]);
+                c.diode[2] += gg * (fastTanh (c.diode[1] + 0.1f) - 0.0997f - c.diode[2]);   // slightly asymmetric, diode-like
+                c.diode[3] += gg * (fastTanh (c.diode[2]) - c.diode[3]);
+                out = c.diode[3] * (1.0f + ladK * 0.2f) / std::sqrt (drv);
+                break;
+            }
+            case FltBells:
+            {
+                float l, b, h, sum = 0.0f;
+                Svf* st[4] = { &c.a, &c.b, &c.c, &c.d };
+                for (int k = 0; k < 4; ++k)
+                {
+                    st[k]->tick (x, bellG[k], bellR, l, b, h);
+                    sum += b * bellR * bellW[k];
+                }
+                out = sum * 1.6f;
+                break;
+            }
             default: break;
         }
+        if (!(out > -16.0f && out < 16.0f)) { c = Chan(); out = 0.0f; }   // NaN / runaway guard
         if (treble != 0.0f)
         {
             c.trebleLp += 0.25f * (out - c.trebleLp);

@@ -274,6 +274,15 @@ class SoundShapingPanel : public juce::Component
 public:
     std::vector<Knob*> modKnobs;
 
+    // The Width knob means different things for different filters, so it is renamed to match.
+    void updateWidthLabel (int filterType)
+    {
+        if (filterType == shownFilter) return;
+        shownFilter = filterType;
+        fwid->setLabel (filterWidthLabel (filterType));
+        fwid->repaint();
+    }
+
     SoundShapingPanel (StratumProcessor& p, std::vector<Ctl*>& all)
     {
         R.parent = this;
@@ -329,6 +338,7 @@ public:
 
 private:
     Registry R;
+    int shownFilter = -1;
     Combo *fType, *iType, *mOrder;
     Knob *cutoff, *ftreble, *reso, *fenv, *fkey, *fwid, *drive, *ip2, *ip3, *imix, *mPan, *mGain;
 };
@@ -715,6 +725,36 @@ private:
     }
 };
 
+// A slot button in the effects list that can be dragged up or down to reorder the effects.
+class FxSlotButton : public juce::TextButton
+{
+public:
+    std::function<void (juce::Point<float>)> onDragMove;      // position relative to the panel
+    std::function<void (juce::Point<float>)> onDragEnd;
+    std::function<juce::Component*()> getPanel;
+
+    void mouseDown (const juce::MouseEvent& e) override { dragging = false; juce::TextButton::mouseDown (e); }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! dragging && e.getDistanceFromDragStart() > 6) { dragging = true; setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
+        if (dragging && onDragMove && getPanel) onDragMove (e.getEventRelativeTo (getPanel()).position);
+        else if (! dragging) juce::TextButton::mouseDrag (e);
+    }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (dragging)
+        {
+            dragging = false;
+            setMouseCursor (juce::MouseCursor::NormalCursor);
+            setState (juce::Button::buttonNormal);
+            if (onDragEnd && getPanel) onDragEnd (e.getEventRelativeTo (getPanel()).position);
+        }
+        else juce::TextButton::mouseUp (e);
+    }
+private:
+    bool dragging = false;
+};
+
 class FxPanel : public juce::Component
 {
 public:
@@ -725,7 +765,10 @@ public:
         addAndMakeVisible (grid);
         for (int i = 0; i < kFxSlots; ++i)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new FxSlotButton();
+            b->getPanel = [this] { return this; };
+            b->onDragMove = [this, i] (juce::Point<float> pt) { dragFrom = i; dragPos = pt; dropSlot = slotAt (pt.y); repaint(); };
+            b->onDragEnd = [this, i] (juce::Point<float> pt) { finishDrag (i, slotAt (pt.y)); };
             slots.add (b); addAndMakeVisible (b);
             b->setClickingTogglesState (true); b->setRadioGroupId (91);
             b->setColour (juce::TextButton::buttonOnColourId, col::panelHi.brighter (0.3f));
@@ -767,6 +810,21 @@ public:
         panelBackground (g, getLocalBounds(), "EFFECTS");
     }
 
+    // shows where a dragged effect will land
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (dragFrom < 0 || dropSlot < 0) return;
+        auto target = slots[dropSlot]->getBounds();
+        const int y = dropSlot > dragFrom ? target.getBottom() : target.getY();
+        g.setColour (col::orange);
+        g.fillRect (target.getX(), y - 1, target.getWidth(), 3);
+        auto ghost = slots[dragFrom]->getBounds().withCentre (juce::Point<int> (slots[dragFrom]->getBounds().getCentreX(), (int) dragPos.y));
+        g.setColour (col::panelHi.withAlpha (0.85f)); g.fillRoundedRectangle (ghost.toFloat(), 3.0f);
+        g.setColour (col::orange); g.drawRoundedRectangle (ghost.toFloat(), 3.0f, 1.0f);
+        g.setColour (juce::Colours::white); g.setFont (font (13.0f));
+        g.drawText (slots[dragFrom]->getButtonText(), ghost.reduced (6, 0), juce::Justification::centredLeft);
+    }
+
     void resized() override
     {
         auto r = getLocalBounds().reduced (6);
@@ -787,6 +845,24 @@ public:
     }
 
 private:
+    int slotAt (float y) const
+    {
+        for (int i = 0; i < kFxSlots; ++i) if (y < (float) slots[i]->getBottom()) return i;
+        return kFxSlots - 1;
+    }
+    void finishDrag (int from, int to)
+    {
+        dragFrom = dropSlot = -1;
+        if (from != to)
+        {
+            proc.moveEffect (layer, from, to);
+            const int sel = fxNewPosition (slot, from, to);      // keep the selection on the same effect
+            slot = sel; grid.slot = sel;
+            slots[sel]->setToggleState (true, juce::dontSendNotification);
+            applySlot();
+        }
+        repaint();
+    }
     void selectSlot (int s) { slot = s; grid.slot = s; applySlot(); }
     void applySlot()
     {
@@ -808,6 +884,8 @@ private:
     DragLabel* len;
     Knob* knobs[5];
     int layer = 0, slot = 0, shownType = -1;
+    int dragFrom = -1, dropSlot = -1;
+    juce::Point<float> dragPos;
 };
 
 //==============================================================================
@@ -898,6 +976,7 @@ struct StratumEditor::LayerView : public juce::Component
             k->setMod (m);
         }
         fx->refreshLabels();
+        shaping->updateWidthLabel ((int) rawParam (proc.apvts, layerId (layer, "f_type")));
         fx->refreshSlotButtons();
         for (auto* o : osc) o->repaint();
         mod->display.repaint();

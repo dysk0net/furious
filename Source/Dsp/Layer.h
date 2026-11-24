@@ -40,6 +40,45 @@ struct OscParams
     const UserTable* user = nullptr;   // set by the host every block; when set it replaces the factory table
 };
 
+// The oscillator effects that reshape the waveform, shared by the audio engine and the editor's waveform display
+// so what you see is what the engine computes.
+inline float oscFrac (float x) { return x - std::floor (x); }
+
+// Warps the read phase p (0..1). modSin is the sine of the effect's own oscillator phase (phase modulation).
+inline float oscFxPhase (int fx, float amt, float tune, float p, float modSin)
+{
+    switch (fx)
+    {
+        case OfxPhaseMod: return oscFrac (p + amt * 0.6f * modSin);
+        case OfxHardSync: return oscFrac (p * (1.0f + amt * 7.0f));
+        case OfxBend: return std::pow (p, std::pow (4.0f, (amt - 0.5f) * 2.0f));
+        case OfxMirror:
+        {
+            float mp = p < 0.5f ? p * 2.0f : 2.0f - p * 2.0f;
+            return std::pow (mp, std::pow (3.0f, (tune - 0.5f) * 2.0f * amt));
+        }
+        default: return p;
+    }
+}
+
+// Reshapes a sample after the table read. ringSin is the sine of the ring modulator's phase.
+inline float oscFxTubeNorm (float amt) { return 1.0f / std::tanh (1.0f + amt * 3.0f); }
+inline float oscFxSample (int fx, float amt, float x, float ringSin, float tubeNorm)
+{
+    switch (fx)
+    {
+        case OfxTube: return std::tanh (x * (1.0f + amt * 10.0f)) * tubeNorm;
+        case OfxRingMod: return x * lerpf (1.0f, ringSin, amt);
+        default: return x;
+    }
+}
+
+// How fast the phase-mod / ring-mod oscillator runs compared with the note.
+inline float oscFxModRatio (int fx, float tune)
+{
+    return fx == OfxRingMod ? std::exp2 ((tune - 0.5f) * 6.0f + 1.0f) : std::exp2 ((tune - 0.5f) * 4.0f);
+}
+
 //==============================================================================
 enum ModSource
 {
@@ -520,7 +559,7 @@ private:
             oc[o].mip = op.user != nullptr ? UserTable::mipFor (mipFreq, fs) : WaveTables::mipFor (mipFreq, fs);
             oc[o].nu = std::max (1, std::min (op.unison, kMaxUnison));
             oc[o].norm = 1.0f / std::sqrt ((float) oc[o].nu);
-            oc[o].tubeNorm = 1.0f / std::tanh (1.0f + op.fxAmt * 3.0f);
+            oc[o].tubeNorm = oscFxTubeNorm (op.fxAmt);
             for (int u = 0; u < oc[o].nu; ++u)
             {
                 float off = oc[o].nu == 1 ? 0.0f : ((float) u / (float) (oc[o].nu - 1)) * 2.0f - 1.0f;
@@ -552,27 +591,19 @@ private:
                     switch (op.fx)
                     {
                         case OfxPhaseMod:
-                            opp = frac (opp + inc * std::exp2 ((op.fxTune - 0.5f) * 4.0f));
-                            p = frac (p + op.fxAmt * 0.6f * std::sin (kTwoPi * opp));
+                            opp = frac (opp + inc * oscFxModRatio (op.fx, op.fxTune));
+                            p = oscFxPhase (op.fx, op.fxAmt, op.fxTune, p, std::sin (kTwoPi * opp));
                             break;
-                        case OfxHardSync: p = frac (p * (1.0f + op.fxAmt * 7.0f)); break;
-                        case OfxBend: p = std::pow (p, std::pow (4.0f, (op.fxAmt - 0.5f) * 2.0f)); break;
-                        case OfxMirror:
-                        {
-                            float mp = p < 0.5f ? p * 2.0f : 2.0f - p * 2.0f;
-                            p = std::pow (mp, std::pow (3.0f, (op.fxTune - 0.5f) * 2.0f * op.fxAmt));
-                            break;
-                        }
+                        case OfxHardSync: case OfxBend: case OfxMirror: p = oscFxPhase (op.fx, op.fxAmt, op.fxTune, p, 0.0f); break;
                         case OfxChaos: p = frac (p + v.rng.next() * op.fxAmt * 0.04f + 1.0f); break;
-                        case OfxRingMod: opp = frac (opp + inc * std::exp2 ((op.fxTune - 0.5f) * 6.0f + 1.0f)); break;
+                        case OfxRingMod: opp = frac (opp + inc * oscFxModRatio (op.fx, op.fxTune)); break;
                         default: break;
                     }
                     x = oc[o].user != nullptr ? oc[o].user->read (oc[o].mip, oc[o].morph, p)
                                               : wt.read (oc[o].table, oc[o].mip, oc[o].morph, p);
                     switch (op.fx)
                     {
-                        case OfxTube: x = std::tanh (x * (1.0f + op.fxAmt * 10.0f)) * oc[o].tubeNorm; break;
-                        case OfxRingMod: x *= lerpf (1.0f, std::sin (kTwoPi * opp), op.fxAmt); break;
+                        case OfxTube: case OfxRingMod: x = oscFxSample (op.fx, op.fxAmt, x, std::sin (kTwoPi * opp), oc[o].tubeNorm); break;
                         case OfxNoise:
                         {
                             float nz = v.rng.next();

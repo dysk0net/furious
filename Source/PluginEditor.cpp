@@ -74,19 +74,40 @@ public:
         g.drawHorizontalLine ((int) r.getCentreY(), r.getX(), r.getRight());
 
         const auto& wt = WaveTables::get();
-        juce::Path p, fill;
+        const int fxType = (int) rawParam (proc.apvts, base + "fx");
+        const float fxAmt = rawParam (proc.apvts, base + "fxa"), fxTune = rawParam (proc.apvts, base + "fxt");
+        auto rawRead = [&] (float ph) { return user != nullptr ? user->read (2, morph, ph) : wt.read (table, 0, morph, ph); };
+        // the oscillator effect applied to one cycle of the waveform, with the same maths as the engine
+        auto shaped = [&] (float cyc)
+        {
+            const float ratio = oscFxModRatio (fxType, fxTune);
+            const float modSin = std::sin (kTwoPi * ratio * cyc);
+            float p0 = oscFxPhase (fxType, fxAmt, fxTune, cyc, modSin);
+            if (fxType == OfxChaos) p0 = oscFrac (p0 + fxAmt * 0.04f * std::sin (cyc * 311.0f) * std::sin (cyc * 97.0f + 1.0f) * 3.0f + 1.0f);
+            float v = rawRead (oscFrac (p0 + phase));
+            if (fxType == OfxNoise)
+                v = lerpf (v, 2.0f * (std::sin (cyc * 523.0f) * std::sin (cyc * 191.0f + 2.0f) * 0.5f), fxAmt);
+            return oscFxSample (fxType, fxAmt, v, modSin, oscFxTubeNorm (fxAmt));
+        };
+        juce::Path p, fill, dry;
         const int n = std::max (2, (int) r.getWidth());
         const float midY = r.getCentreY(), amp = r.getHeight() * 0.36f;
         for (int x = 0; x < n; ++x)
         {
-            const float ph = std::fmod ((float) x / (float) n + phase, 1.0f);
-            float v = user != nullptr ? user->read (2, morph, ph) : wt.read (table, 0, morph, ph);
-            float y = midY - v * amp;
+            const float cyc = (float) x / (float) n;
+            if (fxType != OfxNone)
+            {
+                float yd = midY - rawRead (oscFrac (cyc + phase)) * amp;
+                if (x == 0) dry.startNewSubPath (r.getX(), yd); else dry.lineTo (r.getX() + (float) x, yd);
+            }
+            float v = shaped (cyc);
+            float y = midY - juce::jlimit (-1.4f, 1.4f, v) * amp;
             if (x == 0) { p.startNewSubPath (r.getX(), y); fill.startNewSubPath (r.getX(), midY); fill.lineTo (r.getX(), y); }
             else { p.lineTo (r.getX() + (float) x, y); fill.lineTo (r.getX() + (float) x, y); }
         }
         fill.lineTo (r.getRight(), midY); fill.closeSubPath();
         auto c = on ? col::blue : col::dim;
+        if (fxType != OfxNone) { g.setColour (col::dim.withAlpha (0.55f)); g.strokePath (dry, juce::PathStrokeType (1.0f)); }   // the waveform before the effect
         g.setColour (c.withAlpha (0.22f)); g.fillPath (fill);
         g.setColour (c); g.strokePath (p, juce::PathStrokeType (1.4f));
 
@@ -100,6 +121,11 @@ public:
         g.setColour (userName.isNotEmpty() && user == nullptr ? col::pink : c);
         g.setFont (font (14.0f));
         g.drawText (label, r.reduced (8.0f, 4.0f), juce::Justification::topLeft);
+        if (fxType != OfxNone)
+        {
+            g.setColour (col::dim); g.setFont (font (12.0f));
+            g.drawText (juce::String (oscFxName (fxType)) + " applied", r.reduced (8.0f, 4.0f), juce::Justification::bottomLeft);
+        }
     }
 
     void mouseDown (const juce::MouseEvent&) override

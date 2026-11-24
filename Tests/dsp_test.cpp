@@ -580,6 +580,16 @@ int main()
         CHECK (std::fabs (frac - 0.75f) < 0.03f && s1 < 0.01f, "a step that is switched off outputs nothing");
     }
 
+    // 18. oscillator effect helpers used by the engine and the waveform display
+    {
+        CHECK (std::fabs (oscFxPhase (OfxHardSync, 0.5f, 0.5f, 0.3f, 0.0f) - oscFrac (0.3f * 4.5f)) < 1e-5f, "hard sync multiplies the read phase");
+        CHECK (std::fabs (oscFxPhase (OfxBend, 0.5f, 0.5f, 0.37f, 0.0f) - 0.37f) < 1e-5f, "bend at 0.5 leaves the phase alone");
+        CHECK (std::fabs (oscFxPhase (OfxMirror, 0.0f, 0.5f, 0.25f, 0.0f) - 0.5f) < 1e-5f, "mirror folds the phase");
+        CHECK (std::fabs (oscFxSample (OfxTube, 1.0f, 1.0f, 0.0f, oscFxTubeNorm (1.0f))) <= 1.01f, "tube output stays within the normalised range");
+        CHECK (std::fabs (oscFxSample (OfxRingMod, 1.0f, 0.5f, 0.0f, 1.0f)) < 1e-6f, "ring mod at full depth follows the modulator");
+        CHECK (std::fabs (oscFxSample (OfxNone, 1.0f, 0.4f, 0.9f, 1.0f) - 0.4f) < 1e-6f, "no effect leaves the sample alone");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

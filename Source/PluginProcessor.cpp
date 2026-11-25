@@ -321,14 +321,20 @@ juce::File StratumProcessor::getUserPresetDirectory()
     return userDataFolder().getChildFile ("Presets");
 }
 
-bool StratumProcessor::saveUserPreset (const juce::String& name)
+bool StratumProcessor::saveUserPreset (const juce::String& name, const juce::String& category)
 {
     auto dir = getUserPresetDirectory();
     if (! dir.createDirectory()) return false;
-    info.name = name.isEmpty() ? "Untitled" : name;
+    info.name = name.trim().isEmpty() ? "Untitled" : name.trim();
+    if (category.trim().isNotEmpty()) info.category = category.trim();
+    if (info.author.isEmpty() || info.author == "Furious") info.author = "User";
     auto xml = makeStateXml();
     if (xml == nullptr) return false;
-    return xml->writeTo (dir.getChildFile (juce::File::createLegalFileName (info.name) + ".stpreset"));
+    auto file = dir.getChildFile (juce::File::createLegalFileName (info.name) + ".stpreset");
+    if (file.existsAsFile()) file.copyFileTo (file.withFileExtension ("stpreset.bak"));
+    const bool ok = xml->writeTo (file);
+    if (ok) ++presetListVersion;
+    return ok;
 }
 
 bool StratumProcessor::loadPresetFile (const juce::File& file)

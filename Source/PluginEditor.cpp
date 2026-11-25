@@ -1204,7 +1204,11 @@ struct StratumEditor::MasterView : public juce::Component, private juce::ListBox
         list.updateContent(); list.repaint();
     }
 
-    void tick() { repaint(); }
+    void tick()
+    {
+        if (proc.presetListVersion.load() != seenPresetVersion) { seenPresetVersion = proc.presetListVersion.load(); refresh(); }
+        repaint();
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1295,6 +1299,7 @@ struct StratumEditor::MasterView : public juce::Component, private juce::ListBox
     Registry R;
     juce::ListBox list;
     juce::Array<Row> rows;
+    int seenPresetVersion = 0;
     juce::TextEditor saveName;
     juce::TextButton saveBtn;
     Strip strips[kLayers];
@@ -1317,7 +1322,9 @@ struct StratumEditor::Header : public juce::Component
         R.rebindAll (0);
         for (Knob* k : { macro[0], macro[1], macro[2], thresh, master }) k->name.setColour (juce::Label::textColourId, col::hdrText);
         prev.setButtonText ("<"); next.setButtonText (">"); panic.setButtonText ("Panic");
-        for (auto* b : { &prev, &next, &panic }) addAndMakeVisible (b);
+        saveBtn.setButtonText ("Save"); saveBtn.setTooltip ("Save the current sound as your own preset");
+        saveBtn.onClick = [this] { openSaveDialog(); };
+        for (auto* b : { &prev, &next, &panic, &saveBtn }) addAndMakeVisible (b);
         prev.onClick = [this] { proc.loadFactoryPreset ((proc.currentFactoryIndex + proc.getNumFactoryPresets() - 1) % proc.getNumFactoryPresets()); };
         next.onClick = [this] { proc.loadFactoryPreset ((proc.currentFactoryIndex + 1) % proc.getNumFactoryPresets()); };
         panic.onClick = [this] { proc.panicRequested = true; };
@@ -1370,6 +1377,24 @@ struct StratumEditor::Header : public juce::Component
 
     juce::Rectangle<int> displayBounds() const { return { 250, 8, 570, 36 }; }
 
+    void openSaveDialog()
+    {
+        auto* w = new juce::AlertWindow ("Save preset",
+                                         "Saved to " + StratumProcessor::getUserPresetDirectory().getFullPathName(),
+                                         juce::MessageBoxIconType::NoIcon, this);
+        w->addTextEditor ("name", proc.info.name, "Name");
+        w->addTextEditor ("cat", proc.info.category, "Category");
+        w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<Header> safe (this);
+        w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
+        {
+            if (result != 1 || safe == nullptr) return;
+            safe->proc.saveUserPreset (w->getTextEditorContents ("name"), w->getTextEditorContents ("cat"));
+            safe->repaint();
+        }), true);
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (! displayBounds().contains (e.getPosition())) return;
@@ -1388,6 +1413,7 @@ struct StratumEditor::Header : public juce::Component
     {
         prev.setBounds (828, 12, 26, 28); next.setBounds (858, 12, 26, 28);
         panic.setBounds (810, 50, 76, 20);
+        saveBtn.setBounds (250, 50, 76, 20);
         for (int i = 0; i < 3; ++i) macro[i]->setBounds (900 + i * 66, 2, 64, 72);
         limiter->setBounds (1104, 24, 16, 16);
         thresh->setBounds (1122, 2, 64, 72);
@@ -1406,7 +1432,7 @@ struct StratumEditor::Header : public juce::Component
     Knob* macro[3];
     Knob *thresh, *master;
     Toggle* limiter;
-    juce::TextButton prev, next, panic;
+    juce::TextButton prev, next, panic, saveBtn;
 };
 
 //==============================================================================

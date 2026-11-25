@@ -65,7 +65,9 @@ public:
     int currentFactoryIndex = 0;
 
     static juce::File getUserPresetDirectory();
-    bool saveUserPreset (const juce::String& name);
+    // Saves the current sound as Documents/Furious/Presets/<name>.stpreset (an existing file is kept as .bak).
+    bool saveUserPreset (const juce::String& name, const juce::String& category = {});
+    std::atomic<int> presetListVersion { 0 };     // bumped whenever the user preset folder changes
     bool loadPresetFile (const juce::File& file);
     juce::Array<juce::File> listUserPresets() const;
 

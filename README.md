@@ -35,7 +35,7 @@ all code, wavetables and presets here were written from scratch.
 
 **Master**
 - 8-channel mixer (fader, pan, solo, meters), master gain, limiter, pitch bend range, key offset
-- Preset browser with factory sounds and user presets (`Documents/Furious/Presets/*.stpreset`)
+- Preset browser with factory sounds; a Save button in the header stores your own presets (`Documents/Furious/Presets/*.stpreset`, name and category, re-saving keeps a .bak) and they appear in the preset menu
 - Resizable GUI (fixed 16:9, scales with the window)
 
 Every control is a host parameter, so everything can be automated.

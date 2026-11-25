@@ -29,7 +29,7 @@ all code, wavetables and presets here were written from scratch.
   Phrygian, Blues, Phrygian Dominant, Double Harmonic, Hungarian Minor, Hirajoshi and Whole Tone, in any key.
   Notes snap to the nearest scale note; a note exactly halfway between two goes to the lower one
 - Mono legato with glide, voice limit, MIDI channel and key range per layer
-- 7-slot effect rack incl. a shimmer reverb (drag a slot up or down in the list to reorder; its settings, trancegate pattern and
+- 7-slot effect rack incl. a shimmer reverb and a delay with separate left and right tempo divisions (drag a slot up or down in the list to reorder; its settings, trancegate pattern and
   mod routes move with it): reverb, delay, chorus, phaser, distortion, bitcrusher, trancegate (2 x 32 steps),
   compressor, sidechain ducker, balancer
 

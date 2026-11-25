@@ -908,6 +908,7 @@ public:
         slots[0]->setToggleState (true, juce::dontSendNotification);
         type = &R.make<Combo> (A, names (FxNumTypes, fxTypeName), "x1_type");
         div = &R.make<Combo> (A, names (kNumDivs, divName), "x1_div");
+        { juce::StringArray r; r.add ("R: same as left"); for (auto& n : names (kNumDivs, divName)) r.add ("R: " + n); divR = &R.make<Combo> (A, r, "x1_divr"); }
         len = &R.make<DragLabel> (A, "Steps", "x1_len");
         for (int i = 0; i < 5; ++i) knobs[i] = &R.make<Knob> (A, "", "x1_mix");
         for (auto* c : R.ctls) all.push_back (c);
@@ -923,6 +924,8 @@ public:
         knobs[0]->setLabel ("Mix");
         for (int i = 0; i < 4; ++i) { knobs[i + 1]->setLabel (fxParamLabel (t, i)); knobs[i + 1]->setVisible (t != FxNone && fxParamLabel (t, i)[0] != 0); }
         div->setVisible (t == FxDelay || t == FxTrancegate || t == FxSidechain);
+        divR->setVisible (t == FxDelay);
+        shownDelay = t == FxDelay;
         len->setVisible (t == FxTrancegate);
         grid.setVisible (t == FxTrancegate);
         repaint();
@@ -968,6 +971,8 @@ public:
         top.removeFromLeft (10);
         div->setBounds (top.removeFromLeft (112));
         top.removeFromLeft (10);
+        divR->setBounds (top.removeFromLeft (150));
+        top.removeFromLeft (10);
         len->setBounds (top.removeFromLeft (90));
         auto kr = r.removeFromLeft (5 * 58);
         for (int i = 0; i < 5; ++i) knobs[i]->setBounds (kr.getX() + i * 58, kr.getY(), 58, kr.getHeight());
@@ -998,7 +1003,7 @@ private:
     void applySlot()
     {
         const juce::String x = "x" + juce::String (slot + 1) + "_";
-        type->setSuffix (x + "type"); div->setSuffix (x + "div"); len->setSuffix (x + "len");
+        type->setSuffix (x + "type"); div->setSuffix (x + "div"); divR->setSuffix (x + "divr"); len->setSuffix (x + "len");
         const char* sfx[5] = { "mix", "a", "b", "c", "d" };
         for (int i = 0; i < 5; ++i) knobs[i]->setSuffix (x + sfx[i]);
         for (auto* c : R.ctls) c->rebind (layer);
@@ -1011,7 +1016,8 @@ private:
     Registry R;
     GateGrid grid;
     juce::OwnedArray<juce::TextButton> slots;
-    Combo *type, *div;
+    Combo *type, *div, *divR;
+    bool shownDelay = false;
     DragLabel* len;
     Knob* knobs[5];
     int layer = 0, slot = 0, shownType = -1;

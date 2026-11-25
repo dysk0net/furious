@@ -135,6 +135,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
     static const juce::StringArray sources = makeChoices (SrcNum, modSourceName);
     static const juce::StringArray targets = makeChoices (TgNum, modTargetName);
     static const juce::StringArray divs = makeChoices (kNumDivs, divName);
+    static const juce::StringArray divsRight = [] { juce::StringArray a; a.add ("Same as left"); a.addArray (makeChoices (kNumDivs, divName)); return a; }();
     static const juce::StringArray arpOrders = makeChoices (ArpNumOrders, arpOrderName);
     static const juce::StringArray lfoWaves = makeChoices (7, lfoWaveName);
     static const juce::StringArray mixOrders = makeChoices (2, mixOrderName);
@@ -297,6 +298,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("c", "Control 3", x.c, 0.0f, 1.0f);
         B.f ("d", "Control 4", x.d, 0.0f, 1.0f);
         B.c ("div", "Division", x.div, divs);
+        B.c ("divr", "Delay Right Division", x.divR, divsRight);
         B.i ("len", "Length", x.gateLength, 1, kMaxSteps);
     }
 }

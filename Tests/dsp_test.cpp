@@ -696,6 +696,35 @@ int main()
         CHECK (FxNumTypes == 12, "12 effect types");
     }
 
+    // 21. delay with separate left and right times
+    {
+        int iQuarter = -1, iDotEighth = -1;
+        for (int i = 0; i < kNumDivs; ++i)
+        {
+            if (std::fabs (kDivCyclesPerBeat[i] - 1.0f) < 1e-3f) iQuarter = i;
+            if (std::fabs (kDivCyclesPerBeat[i] - 2.0f / 1.5f) < 1e-3f) iDotEighth = i;
+        }
+        CHECK (iQuarter >= 0 && iDotEighth >= 0, "found the 1/4 and dotted 1/8 divisions");
+        auto echoAt = [&] (int div, int divR)
+        {
+            FxSlot fx; fx.prepare (fs);
+            FxParams fp; fp.type = FxDelay; fp.mix = 1.0f; fp.a = 0.5f; fp.b = 0.0f; fp.c = 1.0f; fp.d = 0.0f; fp.div = div; fp.divR = divR;
+            Transport tp; tp.bpm = 120.0; tp.ppq = 0.0;
+            const int N = (int) fs;
+            std::vector<float> L ((size_t) N, 0.0f), R ((size_t) N, 0.0f);
+            L[100] = R[100] = 1.0f;
+            for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
+            int pl = 0, pr = 0; float ml = 0, mr = 0;
+            for (int i = 1000; i < N; ++i) { if (std::fabs (L[(size_t) i]) > ml) { ml = std::fabs (L[(size_t) i]); pl = i; } if (std::fabs (R[(size_t) i]) > mr) { mr = std::fabs (R[(size_t) i]); pr = i; } }
+            return std::make_pair (pl - 100, pr - 100);
+        };
+        auto same = echoAt (iQuarter, 0);                              // right follows left
+        auto split = echoAt (iQuarter, iDotEighth + 1);                // left 1/4, right dotted 1/8
+        const int quarter = (int) (fs * 0.5), dotted = (int) (fs * 0.375);
+        CHECK (std::abs (same.first - quarter) < 4 && std::abs (same.second - quarter) < 4, "right follows left when set to 'same as left'");
+        CHECK (std::abs (split.first - quarter) < 4 && std::abs (split.second - dotted) < 4, "left 1/4 and right dotted 1/8 give different echo times");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

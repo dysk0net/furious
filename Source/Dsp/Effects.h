@@ -41,7 +41,8 @@ struct FxParams
     int type = FxNone;
     float mix = 0.35f;
     float a = 0.5f, b = 0.5f, c = 0.5f, d = 0.5f;
-    int div = 6;                          // tempo division (delay time / gate speed / sidechain rate)
+    int div = 6;                          // tempo division (delay time / gate speed / sidechain rate); the delay's left time
+    int divR = 0;                         // the delay's right time: 0 = same as left, otherwise division index + 1
     int gateLength = 16;
     float gate[2][kMaxSteps] = {};        // trancegate lanes, 0 or 1
 };
@@ -249,11 +250,12 @@ private:
 
     void delayFx (float dl, float dr, float& wl, float& wr, const FxParams& p, double bpm)
     {
-        float cyc = kDivCyclesPerBeat[std::min (std::max (p.div, 0), kNumDivs - 1)];
-        float secs = (float) (60.0 / std::max (bpm, 20.0)) / cyc * (0.25f + 1.5f * p.a * 0.5f + 0.0f);
-        secs = clampf (secs, 0.002f, 0.98f);
-        float d = secs * fs;
-        float dRight = d * (1.0f + 0.0f);
+        // each channel has its own tempo division; Time Scale stretches both (x0.5 .. x2, exactly x1 in the middle)
+        const float beatSecs = (float) (60.0 / std::max (bpm, 20.0)), scale = std::exp2 ((p.a - 0.5f) * 2.0f);
+        const int dL = std::min (std::max (p.div, 0), kNumDivs - 1);
+        const int dR = p.divR <= 0 ? dL : std::min (p.divR - 1, kNumDivs - 1);
+        float d = clampf (beatSecs / kDivCyclesPerBeat[dL] * scale, 0.002f, 0.98f) * fs;
+        float dRight = clampf (beatSecs / kDivCyclesPerBeat[dR] * scale, 0.002f, 0.98f) * fs;
         float yl = readFrac (delay[0], dPos, d);
         float yr = readFrac (delay[1], dPos, dRight);
         float tone = 0.05f + p.c * 0.9f;

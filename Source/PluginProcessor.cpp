@@ -411,13 +411,13 @@ void StratumProcessor::moveEffect (int layer, int from, int to)
         return 0.0f;
     };
 
-    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d", "div", "len" };
-    float old[kFxSlots][8];
+    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d", "div", "divr", "len" };
+    float old[kFxSlots][9];
     for (int k = 0; k < kFxSlots; ++k)
-        for (int j = 0; j < 8; ++j)
+        for (int j = 0; j < 9; ++j)
             old[k][j] = plainOf (layerId (layer, "x" + juce::String (k + 1) + "_" + sfx[j]));
     for (int i = 0; i < kFxSlots; ++i)
-        for (int j = 0; j < 8; ++j)
+        for (int j = 0; j < 9; ++j)
             setPlain (layerId (layer, "x" + juce::String (i + 1) + "_" + sfx[j]), old[src[i]][j]);
 
     // trancegate patterns are not host parameters

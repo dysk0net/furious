@@ -96,7 +96,8 @@ enum ModTarget
     TgNone = 0, TgOscVol1, TgOscVol2, TgOscVol3, TgOscMorph1, TgOscMorph2, TgOscMorph3,
     TgOscPitch1, TgOscPitch2, TgOscPitch3, TgCutoff, TgResonance, TgInsertDrive, TgLayerGain,
     TgLayerPan, TgDetune, TgFx1Mix, TgFx2Mix, TgFx3Mix, TgFx4Mix, TgFx5Mix, TgFx6Mix, TgFx7Mix,
-    TgFmBase, TgFmEnd = TgFmBase + 8, TgNum   // nine FM amounts: carrier * 3 + modulator
+    TgFmBase, TgFmEnd = TgFmBase + 8,         // nine FM amounts: carrier * 3 + modulator
+    TgLearned, TgNum                          // TgLearned: any control, picked with Learn (ModSlot::param)
 };
 
 inline const char* modSourceName (int s)
@@ -114,11 +115,24 @@ inline const char* modTargetName (int t)
         "Insert-Drive", "Layer Gain", "Layer Pan", "Unison Detune", "FX 1 Mix", "FX 2 Mix", "FX 3 Mix",
         "FX 4 Mix", "FX 5 Mix", "FX 6 Mix", "FX 7 Mix",
         "FM A from A", "FM A from B", "FM A from C", "FM B from A", "FM B from B", "FM B from C",
-        "FM C from A", "FM C from B", "FM C from C" };
+        "FM C from A", "FM C from B", "FM C from C", "Learned control" };
     return n[std::min (std::max (t, 0), (int) TgNum - 1)];
 }
 
-struct ModSlot { bool on = true; int source = SrcNone; int target = TgNone; float amount = 0.0f; };
+struct ModSlot
+{
+    bool on = true; int source = SrcNone; int target = TgNone; float amount = 0.0f;
+    int param = -1;      // with target TgLearned: index of the host parameter being modulated (-1 = none)
+};
+
+// A host parameter moved by a modulation amount (source * slot amount, -1..1 of the parameter's whole range).
+// kind: 0 float, 1 int / choice, 2 bool.
+inline float modulatedParamValue (float base, float lo, float hi, int kind, float mod)
+{
+    if (kind == 2) return (base + mod) > 0.5f ? 1.0f : 0.0f;
+    float v = clampf (base + mod * (hi - lo), lo, hi);
+    return kind == 1 ? std::round (v) : v;
+}
 
 //==============================================================================
 struct VoicingParams
@@ -243,6 +257,28 @@ public:
 
     // What the editor shows as the playhead: the step each sequence / the arpeggiator is on right now, or -1 when idle.
     int seqPosition (int k) const { return seqPos_[k].load (std::memory_order_relaxed); }
+    // Layer-wide, block-rate values of the modulation sources, for modulating controls that have no per-voice hook
+    // (the "Learn" targets). Envelopes report the loudest active voice; velocity and key come from the newest voice.
+    void blockSources (float* out) const
+    {
+        for (int k = 0; k < SrcNum; ++k) out[k] = 0.0f;
+        for (int k = 0; k < kLfos; ++k) out[SrcLfo1 + k] = gLfoVal[k];
+        for (int k = 0; k < kSeqs; ++k) out[SrcSeq1 + k] = gSeqVal[k];
+        const Voice* newest = nullptr;
+        for (const auto& v : voices)
+        {
+            if (! v.active) continue;
+            for (int k = 0; k < kEnvs; ++k) out[SrcEnv1 + k] = std::max (out[SrcEnv1 + k], v.env[k].value);
+            if (newest == nullptr || v.age > newest->age) newest = &v;
+        }
+        if (newest != nullptr)
+        {
+            out[SrcVelocity] = newest->vel;
+            out[SrcKeyFollow] = (newest->noteF - 60.0f) / 60.0f;
+            out[SrcRandom] = newest->randVal;
+        }
+    }
+
     int arpPosition() const { return arpPos_.load (std::memory_order_relaxed); }
 
     // Adds this layer's output into L/R (does not clear).
@@ -715,6 +751,7 @@ public:
     int totalVoices() const { int c = 0; for (auto& l : layers) c += l.activeVoices(); return c; }
     int seqPosition (int layer, int seq) const { return layers[layer].seqPosition (seq); }
     int arpPosition (int layer) const { return layers[layer].arpPosition(); }
+    void blockSources (int layer, float* out) const { layers[layer].blockSources (out); }
     float layerPeak (int l) const { return peaks[l]; }
     float outPeak() const { return outPk; }
 

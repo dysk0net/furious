@@ -106,6 +106,34 @@ void StratumProcessor::renderChunk (float* l, float* r, int start, int count)
     }
 }
 
+// Mod slots aimed at "Learned control": move the chosen host parameter (in the engine's working copy only) by
+// source x amount, using block-rate layer-wide source values. All sources are read before anything is moved.
+void StratumProcessor::applyLearnedModulation()
+{
+    bool any = false;
+    for (int l = 0; l < kLayers && ! any; ++l)
+        for (const auto& m : engineParams.layer[l].mod) any = any || (m.on && m.target == TgLearned && m.param >= 0 && m.source != SrcNone && m.amount != 0.0f);
+    if (! any) return;
+
+    float srcVals[kLayers][SrcNum];
+    for (int l = 0; l < kLayers; ++l)
+    {
+        engine->blockSources (l, srcVals[l]);
+        for (int k = 0; k < 3; ++k) srcVals[l][SrcMacro1 + k] = engineParams.macros[k];
+        srcVals[l][SrcModWheel] = engineParams.modWheel;
+    }
+    // copy the slots first: moving a parameter must not change another slot's source or amount mid-way
+    ModSlot slots[kLayers][kModSlots];
+    for (int l = 0; l < kLayers; ++l) for (int j = 0; j < kModSlots; ++j) slots[l][j] = engineParams.layer[l].mod[j];
+    for (int l = 0; l < kLayers; ++l)
+        for (int j = 0; j < kModSlots; ++j)
+        {
+            const auto& m = slots[l][j];
+            if (m.on && m.target == TgLearned && m.param >= 0 && m.source != SrcNone && m.amount != 0.0f)
+                binder->modulate (engineParams, m.param, srcVals[l][m.source] * m.amount);
+        }
+}
+
 void StratumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -120,6 +148,7 @@ void StratumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             engineParams.layer[l].osc[o].user = bank.get (l * kOscs + o);
     engineParams.modWheel = modWheelValue.load();
     engineParams.pitchBend = pitchBendValue.load();
+    applyLearnedModulation();
     if (panicRequested.exchange (false)) { engine->panic(); held.reset(); sustained.reset(); }
 
     // transport: host if available, otherwise a free-running 120 bpm clock

@@ -23,6 +23,8 @@ all code, wavetables and presets here were written from scratch.
 - 7 insert types (tube, overdrive, tone fuzz, bitcrusher, exciter, ring mod), filter/insert order switch
 - 4 envelopes (delay, attack, level, decay, sustain, release, per-stage slopes), 4 dual-waveform LFOs
   (bend, phase, fade, tempo sync), 4 step sequencers (32 steps, per-step on/off, gate length, loop point, oneshot, smoothing, scale lock)
+- Mod Learn: press Learn on a modulation slot, then click any control in the layer (knobs, drop-downs, switches) to
+  make it that slot's target; learned controls are moved at block rate by layer-wide source values
 - 8-slot modulation matrix per layer: 19 sources x 31 targets, bipolar amounts, 3 macros
 - Arpeggiator: 16-step pattern with per-step on/off and transpose, 6 orders, 1-4 octaves, tempo sync
 - Scale lock for the arpeggiator and for each sequencer (when it drives an oscillator's pitch): Major, Minor,

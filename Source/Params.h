@@ -15,6 +15,8 @@ using APVTS = juce::AudioProcessorValueTreeState;
 // Non-parameter state (sequencer steps etc.) that is saved with the preset.
 inline juce::String layerId (int layer, const juce::String& suffix) { return "L" + juce::String (layer + 1) + "_" + suffix; }
 
+constexpr int kMaxLearnParams = 4095;      // upper bound of a learned parameter index
+
 class ParamBinder
 {
 public:
@@ -59,6 +61,30 @@ public:
     {
         if (layout) layout->add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { idPrefix + id, 1 }, namePrefix + name, choices, dst));
         else link (idPrefix + id, &dst, 1);
+    }
+
+    // Parameters are numbered in the order they were described; modulation slots refer to them by that number.
+    int numEntries() const { return (int) entries.size(); }
+    int indexOf (const juce::String& paramId) const
+    {
+        for (size_t i = 0; i < entries.size(); ++i) if (entries[i].param->paramID == paramId) return (int) i;
+        return -1;
+    }
+    juce::String idAt (int i) const { return i >= 0 && i < numEntries() ? entries[(size_t) i].param->paramID : juce::String(); }
+    juce::String nameAt (int i) const { return i >= 0 && i < numEntries() ? entries[(size_t) i].param->getName (48) : juce::String(); }
+
+    // Moves parameter i of target by mod (see modulatedParamValue). Call after pull().
+    void modulate (EngineParams& target, int i, float mod) const
+    {
+        if (i < 0 || i >= numEntries() || mod == 0.0f) return;
+        const auto& e = entries[(size_t) i];
+        const auto range = e.param->getNormalisableRange();
+        char* d = reinterpret_cast<char*> (&target) + e.offset;
+        const float base = e.src->load (std::memory_order_relaxed);
+        const float v = modulatedParamValue (base, range.start, range.end, e.kind, mod);
+        if (e.kind == 0) *reinterpret_cast<float*> (d) = v;
+        else if (e.kind == 1) *reinterpret_cast<int*> (d) = (int) std::lround (v);
+        else *reinterpret_cast<bool*> (d) = v > 0.5f;
     }
 
     // Copy the current host parameter values into target.
@@ -265,6 +291,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.c ("src", "Source", m.source, sources);
         B.c ("tgt", "Target", m.target, targets);
         B.f ("amt", "Amount", m.amount, -1.0f, 1.0f);
+        B.i ("prm", "Learned Control", m.param, -1, kMaxLearnParams);
     }
 
     B.setPrefix (L + "_v_", L + " Voicing ");

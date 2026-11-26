@@ -129,6 +129,7 @@ public:
     explicit Ctl (stratum::APVTS& a) : apvts (a) {}
     void setSuffix (const juce::String& s, bool g = false) { suffix = s; global = g; }
     juce::String id (int layer) const { return global ? suffix : stratum::layerId (layer, suffix); }
+    const juce::String& getSuffix() const { return suffix; }
     virtual void rebind (int layer) = 0;
 protected:
     stratum::APVTS& apvts;

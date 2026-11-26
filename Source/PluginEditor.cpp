@@ -1029,7 +1029,10 @@ private:
 class MatrixPanel : public juce::Component
 {
 public:
-    MatrixPanel (StratumProcessor& p, std::vector<Ctl*>& all)
+    std::function<void (int)> onLearn;     // asks the layer view to start learning a control for this slot
+    int layer = 0;
+
+    MatrixPanel (StratumProcessor& p, std::vector<Ctl*>& all) : proc (p)
     {
         R.parent = this;
         auto& A = p.apvts;
@@ -1040,6 +1043,10 @@ public:
             amt[k] = &R.make<DragLabel> (A, "Amount", pre + "amt");
             src[k] = &R.make<Combo> (A, names (SrcNum, modSourceName), pre + "src");
             tgt[k] = &R.make<Combo> (A, names (TgNum, modTargetName), pre + "tgt");
+            learn[k].setButtonText ("Learn");
+            learn[k].setClickingTogglesState (false);
+            learn[k].onClick = [this, k] { if (onLearn) onLearn (k); };
+            addAndMakeVisible (learn[k]);
         }
         for (auto* c : R.ctls) all.push_back (c);
     }
@@ -1051,7 +1058,6 @@ public:
         for (int k = 0; k < kModSlots; ++k)
         {
             g.drawText ("Source", k * cw + 8, 52, 50, 20, juce::Justification::centredLeft);
-            g.drawText ("Target", k * cw + 8, 82, 50, 20, juce::Justification::centredLeft);
             if (k > 0) { g.setColour (col::line); g.drawVerticalLine (k * cw, 4.0f, (float) getHeight() - 4.0f); g.setColour (col::dim); }
         }
     }
@@ -1067,12 +1073,83 @@ public:
             c.removeFromTop (16);
             src[k]->setBounds (c.removeFromTop (22).withTrimmedLeft (46));
             c.removeFromTop (8);
-            tgt[k]->setBounds (c.removeFromTop (22).withTrimmedLeft (46));
+            auto trow = c.removeFromTop (22);
+            learn[k].setBounds (trow.removeFromLeft (44).reduced (0, 1));
+            tgt[k]->setBounds (trow.withTrimmedLeft (2));
         }
     }
+
+    // when a slot points at a learned control, say which one on top of the target box
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        for (int k = 0; k < kModSlots; ++k)
+        {
+            const juce::String pre = "r" + juce::String (k + 1) + "_";
+            if ((int) rawParam (proc.apvts, layerId (layer, pre + "tgt")) != TgLearned) continue;
+            const int idx = (int) rawParam (proc.apvts, layerId (layer, pre + "prm"));
+            juce::String nm = idx >= 0 ? proc.learnNameAt (idx) : juce::String ("(click Learn)");
+            if (nm.startsWithChar ('L') && nm.indexOfChar (' ') > 0 && nm.substring (1, nm.indexOfChar (' ')).containsOnly ("0123456789"))
+                nm = nm.substring (nm.indexOfChar (' ') + 1);
+            auto r = tgt[k]->getBounds().toFloat().reduced (0.5f);
+            g.setColour (col::bg); g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (col::orange); g.drawRoundedRectangle (r, 3.0f, 1.0f);
+            g.setColour (col::text); g.setFont (font (12.0f));
+            g.drawText (nm, r.reduced (5.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft, true);
+        }
+    }
+    void setLearning (int slot) { for (int k = 0; k < kModSlots; ++k) learn[k].setToggleState (k == slot, juce::dontSendNotification); }
 private:
+    StratumProcessor& proc;
+    juce::TextButton learn[kModSlots];
     Registry R;
     Toggle* on[kModSlots]; DragLabel* amt[kModSlots]; Combo *src[kModSlots], *tgt[kModSlots];
+};
+
+//==============================================================================
+// Shown over the layer while a mod slot is learning: every control that can be modulated is outlined, and the next
+// click on one of them becomes that slot's target.
+class LearnOverlay : public juce::Component
+{
+public:
+    std::function<std::vector<std::pair<juce::Rectangle<int>, Ctl*>>()> getTargets;
+    std::function<void (Ctl*)> onPick;
+    std::function<void()> onCancel;
+    juce::String message;
+
+    LearnOverlay() { setWantsKeyboardFocus (true); }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black.withAlpha (0.35f));
+        if (getTargets)
+            for (auto& t : getTargets())
+            {
+                const bool hot = t.first.contains (mouse);
+                g.setColour (col::orange.withAlpha (hot ? 0.35f : 0.12f)); g.fillRoundedRectangle (t.first.toFloat(), 3.0f);
+                g.setColour (col::orange.withAlpha (hot ? 1.0f : 0.7f)); g.drawRoundedRectangle (t.first.toFloat().reduced (0.5f), 3.0f, hot ? 2.0f : 1.0f);
+            }
+        auto bar = getLocalBounds().removeFromTop (28).toFloat();
+        g.setColour (col::bg.withAlpha (0.92f)); g.fillRect (bar);
+        g.setColour (message.isEmpty() ? col::text : col::pink); g.setFont (font (14.0f, true));
+        g.drawText (message.isEmpty() ? "Click the control to modulate   (Esc or a click on empty space cancels)" : message, bar.toNearestInt(), juce::Justification::centred);
+    }
+    void mouseMove (const juce::MouseEvent& e) override { mouse = e.getPosition(); repaint(); }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        Ctl* best = nullptr; int bestArea = 1 << 30;
+        if (getTargets)
+            for (auto& t : getTargets())
+                if (t.first.contains (e.getPosition()) && t.first.getWidth() * t.first.getHeight() < bestArea)
+                { best = t.second; bestArea = t.first.getWidth() * t.first.getHeight(); }
+        if (best != nullptr && onPick) onPick (best);
+        else if (onCancel) onCancel();
+    }
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k == juce::KeyPress::escapeKey) { if (onCancel) onCancel(); return true; }
+        return false;
+    }
+private:
+    juce::Point<int> mouse;
 };
 
 //==============================================================================
@@ -1089,8 +1166,54 @@ struct StratumEditor::LayerView : public juce::Component
         mod = std::make_unique<ModPanel> (p, ctls); addAndMakeVisible (*mod);
         fx = std::make_unique<FxPanel> (p, ctls); addAndMakeVisible (*fx);
         matrix = std::make_unique<MatrixPanel> (p, ctls); addAndMakeVisible (*matrix);
-        modKnobs = shaping->modKnobs;
-        for (auto* o : osc) modKnobs.push_back (o->volKnob());
+        matrix->onLearn = [this] (int slot) { beginLearn (slot); };
+        overlay.setVisible (false);
+        overlay.getTargets = [this] { return learnTargets(); };
+        overlay.onPick = [this] (Ctl* c) { finishLearn (c); };
+        overlay.onCancel = [this] { endLearn(); };
+        addChildComponent (overlay);
+    }
+
+    // --- mod learn -------------------------------------------------------------------------------------------
+    static bool isMatrixCtl (const Ctl* c) { const auto& s = c->getSuffix(); return s.length() > 2 && s[0] == 'r' && juce::CharacterFunctions::isDigit (s[1]); }
+
+    std::vector<std::pair<juce::Rectangle<int>, Ctl*>> learnTargets()
+    {
+        std::vector<std::pair<juce::Rectangle<int>, Ctl*>> out;
+        for (auto* c : ctls)
+            if (c->isShowing() && ! isMatrixCtl (c) && c->getWidth() > 4)
+                out.push_back ({ getLocalArea (c, c->getLocalBounds()), c });
+        return out;
+    }
+    void beginLearn (int slot)
+    {
+        learnSlot = slot; overlay.message = {};
+        overlay.setBounds (getLocalBounds().withHeight (matrix->getY()));      // the matrix stays visible below
+        overlay.setVisible (true); overlay.toFront (true); overlay.grabKeyboardFocus();
+        matrix->setLearning (slot);
+    }
+    void endLearn() { learnSlot = -1; overlay.setVisible (false); matrix->setLearning (-1); }
+    void finishLearn (Ctl* c)
+    {
+        const int k = learnSlot;
+        const auto* knob = dynamic_cast<Knob*> (c);
+        int target = TgLearned, prm = -1;
+        if (knob != nullptr && knob->modTarget > 0) target = knob->modTarget;       // controls with a dedicated per-voice target use it
+        else
+        {
+            prm = proc.learnIndexForId (c->id (layer));
+            if (prm < 0) { overlay.message = "That control can't be modulated"; overlay.repaint(); return; }
+        }
+        auto setParam = [this] (const juce::String& id, float plain)
+        {
+            if (auto* p = proc.apvts.getParameter (id)) { p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (plain)); p->endChangeGesture(); }
+        };
+        const juce::String pre = "r" + juce::String (k + 1) + "_";
+        setParam (layerId (layer, pre + "tgt"), (float) target);
+        setParam (layerId (layer, pre + "prm"), (float) prm);
+        setParam (layerId (layer, pre + "on"), 1.0f);
+        if (std::fabs (rawParam (proc.apvts, layerId (layer, pre + "amt"))) < 0.01f) setParam (layerId (layer, pre + "amt"), 0.5f);
+        endLearn();
     }
 
     void setLayer (int l)
@@ -1101,17 +1224,31 @@ struct StratumEditor::LayerView : public juce::Component
         for (auto* c : ctls) c->rebind (l);
         fx->setLayer (l);
         for (auto* c : ctls) c->rebind (l);
+        matrix->layer = l;
+        endLearn();
     }
 
     void tick()
     {
         const auto& P = proc.engineParams.layer[layer];
-        for (auto* k : modKnobs)
-        {
-            float m = 0.0f;
-            for (const auto& s : P.mod) if (s.on && s.source != SrcNone && s.target == k->modTarget) m += s.amount;
-            k->setMod (m);
-        }
+        juce::String learnedId[kModSlots];
+        for (int j = 0; j < kModSlots; ++j)
+            if (P.mod[j].on && P.mod[j].source != SrcNone && P.mod[j].target == TgLearned && P.mod[j].param >= 0) learnedId[j] = proc.learnIdAt (P.mod[j].param);
+        for (auto* c : ctls)
+            if (auto* k = dynamic_cast<Knob*> (c))
+            {
+                float m = 0.0f;
+                const juce::String kid = k->id (layer);
+                for (int j = 0; j < kModSlots; ++j)
+                {
+                    const auto& s = P.mod[j];
+                    if (! s.on || s.source == SrcNone) continue;
+                    if (k->modTarget > 0 && s.target == k->modTarget) m += s.amount;
+                    else if (learnedId[j].isNotEmpty() && learnedId[j] == kid) m += s.amount;
+                }
+                k->setMod (m);
+            }
+        matrix->layer = layer; matrix->repaint();
         fx->refreshLabels();
         shaping->updateWidthLabel ((int) rawParam (proc.apvts, layerId (layer, "f_type")));
         fx->refreshSlotButtons();
@@ -1128,6 +1265,7 @@ struct StratumEditor::LayerView : public juce::Component
         mod->setBounds (leftW, 100, getWidth() - leftW, 232);
         fx->setBounds (leftW, 332, getWidth() - leftW, 160);
         matrix->setBounds (0, 492, getWidth(), getHeight() - 492);
+        if (overlay.isVisible()) overlay.setBounds (getLocalBounds().withHeight (matrix->getY()));
     }
 
     StratumProcessor& proc;
@@ -1138,7 +1276,8 @@ struct StratumEditor::LayerView : public juce::Component
     std::unique_ptr<ModPanel> mod;
     std::unique_ptr<FxPanel> fx;
     std::unique_ptr<MatrixPanel> matrix;
-    std::vector<Knob*> modKnobs;
+    LearnOverlay overlay;
+    int learnSlot = -1;
 };
 
 //==============================================================================
@@ -1413,7 +1552,7 @@ struct StratumEditor::Header : public juce::Component
     {
         prev.setBounds (828, 12, 26, 28); next.setBounds (858, 12, 26, 28);
         panic.setBounds (810, 50, 76, 20);
-        saveBtn.setBounds (250, 50, 76, 20);
+        saveBtn.setBounds (756, 13, 58, 26);
         for (int i = 0; i < 3; ++i) macro[i]->setBounds (900 + i * 66, 2, 64, 72);
         limiter->setBounds (1104, 24, 16, 16);
         thresh->setBounds (1122, 2, 64, 72);

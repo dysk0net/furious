@@ -80,11 +80,17 @@ public:
     // Moves the effect in slot `from` to slot `to` of a layer; the ones in between shift by one.
     // Settings, the trancegate pattern and modulation routes that aim at an effect's mix all follow the effect.
     void moveEffect (int layer, int from, int to);
+
+    // Mod "Learn": host parameters that mod slots can be pointed at
+    int learnIndexForId (const juce::String& paramId) const { return binder->indexOf (paramId); }
+    juce::String learnIdAt (int i) const { return binder->idAt (i); }
+    juce::String learnNameAt (int i) const { return binder->nameAt (i); }
     juce::String getUserWavetableName (int layer, int osc) const { return info.userTable[layer][osc]; }
     std::shared_ptr<stratum::UserTable> getUserWavetable (int layer, int osc) const { return bank.getShared (layer * stratum::kOscs + osc); }
 
 private:
     static stratum::APVTS::ParameterLayout createLayout();
+    void applyLearnedModulation();
     void applySnapshot (const stratum::EngineParams& snap, const PresetInfo& newInfo);
     void copyCustomState (const stratum::EngineParams& src);
     std::unique_ptr<juce::XmlElement> makeStateXml();

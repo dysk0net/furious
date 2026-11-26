@@ -672,7 +672,7 @@ int main()
         const double modded = render ();
         std::printf ("      (roughness without the FM route %.3f, with the macro raising A from B %.3f)\n", plain, modded);
         CHECK (modded > plain * 1.15, "a mod-matrix route to an FM amount opens up the FM");
-        CHECK (TgNum == TgFmBase + 9, "nine FM mod targets");
+        CHECK (TgFmEnd == TgFmBase + 8, "nine FM mod targets");
 
         // shimmer: energy one octave above the input appears in the tail
         auto tailAt = [&] (float shimmerAmt, float hz)
@@ -723,6 +723,21 @@ int main()
         const int quarter = (int) (fs * 0.5), dotted = (int) (fs * 0.375);
         CHECK (std::abs (same.first - quarter) < 4 && std::abs (same.second - quarter) < 4, "right follows left when set to 'same as left'");
         CHECK (std::abs (split.first - quarter) < 4 && std::abs (split.second - dotted) < 4, "left 1/4 and right dotted 1/8 give different echo times");
+    }
+
+    // 22. learned-control modulation helpers
+    {
+        CHECK (std::fabs (modulatedParamValue (0.5f, 0.0f, 1.0f, 0, 0.25f) - 0.75f) < 1e-6f, "float parameter moves by a share of its range");
+        CHECK (std::fabs (modulatedParamValue (-12.0f, -24.0f, 24.0f, 0, 0.5f) - 12.0f) < 1e-4f, "range is scaled to the parameter, not 0..1");
+        CHECK (modulatedParamValue (0.9f, 0.0f, 1.0f, 0, 0.5f) == 1.0f, "result is clamped to the parameter range");
+        CHECK (modulatedParamValue (2.0f, 0.0f, 10.0f, 1, 0.26f) == 5.0f, "integer and choice parameters step");
+        CHECK (modulatedParamValue (0.0f, 0.0f, 1.0f, 2, 0.6f) == 1.0f && modulatedParamValue (1.0f, 0.0f, 1.0f, 2, -0.6f) == 0.0f, "switches flip past the halfway point");
+        initPatch (*E);
+        eng->panic(); eng->noteOn (1, 60, 0.5f, *E);
+        std::vector<float> w; renderSeconds (*eng, *E, 0.1f, fs, &w);
+        float src[SrcNum]; eng->blockSources (0, src);
+        CHECK (src[SrcEnv1] > 0.0f && std::fabs (src[SrcVelocity] - 0.5f) < 1e-4f, "block-rate sources report the playing voice");
+        CHECK (TgNum == TgLearned + 1, "the Learned target is last");
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");

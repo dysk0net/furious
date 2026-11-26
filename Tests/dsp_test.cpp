@@ -740,6 +740,51 @@ int main()
         CHECK (TgNum == TgLearned + 1, "the Learned target is last");
     }
 
+    // 23. gate length: longer than a step, and gating the notes of the sequencer and the arpeggiator
+    {
+        SeqParams sp; sp.length = 4; sp.sync = false; sp.rateHz = 4.0f; sp.smooth = 0.0f;
+        for (int i = 0; i < 4; ++i) sp.steps[i] = 0.8f;
+        sp.stepOn[1] = false; sp.gateLength = 2.0f;
+        StepSeq ss; ss.reset(); int open = 0;
+        for (int i = 0; i < 1000; ++i) { float v = ss.advance (0.001f, sp, 120.0); open += ss.gateOpen && v > 0.5f; }
+        CHECK (open > 970, "gate 200% carries a note through the rest after it");
+        sp.gateLength = 1.5f; ss.reset(); open = 0;
+        for (int i = 0; i < 1000; ++i) { ss.advance (0.001f, sp, 120.0); open += ss.gateOpen; }
+        CHECK (open > 860 && open < 890, "gate 150% fills half of the rest");
+
+        auto energy = [&] (float seqGate, bool useSeq, float arpGate, bool useArp, float release)
+        {
+            initPatch (*E);
+            LayerParams& P = E->layer[0];
+            for (auto& fxs : P.fx) fxs.type = FxNone;
+            P.filter.type = FltOff;
+            P.osc[0].unison = 1;
+            P.env[0].release = release; P.env[0].attack = 0.002f; P.env[0].sustain = 1.0f;
+            P.mod[0] = { false, 0, 0, 0.0f };
+            if (useSeq)
+            {
+                P.seq[0].sync = false; P.seq[0].rateHz = 4.0f; P.seq[0].length = 4; P.seq[0].smooth = 0.0f; P.seq[0].gateLength = seqGate;
+                P.mod[0] = { true, SrcSeq1, TgOscPitch1, 0.02f };
+            }
+            if (useArp)
+            {
+                int q = 0; for (int i = 0; i < kNumDivs; ++i) if (std::fabs (kDivCyclesPerBeat[i] - 2.0f) < 1e-3f) q = i;
+                P.arp.on = true; P.arp.div = q; P.arp.gateLength = arpGate; P.arp.order = ArpUp;
+            }
+            std::vector<float> w; eng->panic (); eng->noteOn (1, 57, 1.0f, *E); eng->noteOn (1, 64, 1.0f, *E);
+            Stats st = renderSeconds (*eng, *E, 2.0f, fs, &w);
+            return st.rms;
+        };
+        energy (1.0f, true, 0.6f, false, 0.2f);                      // warm-up
+        const double s1 = energy (1.0f, true, 0.6f, false, 0.2f), s03 = energy (0.3f, true, 0.6f, false, 0.2f);
+        std::printf ("      (sequencer gate 100%% rms %.4f, 30%% rms %.4f)\n", s1, s03);
+        CHECK (s03 < s1 * 0.6, "the sequencer gate shortens the notes");
+        const double a1 = energy (1.0f, false, 1.0f, true, 0.6f), a03 = energy (1.0f, false, 0.3f, true, 0.6f), a2 = energy (1.0f, false, 2.0f, true, 0.6f);
+        std::printf ("      (arp gate 100%% rms %.4f, 30%% rms %.4f, 200%% rms %.4f)\n", a1, a03, a2);
+        CHECK (a03 < a1 * 0.7, "the arp gate shortens the notes, even with a long release");
+        CHECK (a2 > a1 * 1.05, "an arp gate above 100% lets notes overlap");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

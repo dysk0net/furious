@@ -241,7 +241,7 @@ public:
 
     void allNotesOff (bool immediate = false)
     {
-        arpHeld.clear(); arpNote = -1; monoStack.clear();
+        arpHeld.clear(); arpPending.clear(); monoStack.clear();
         for (auto& s : seqPos_) s.store (-1, std::memory_order_relaxed);
         arpPos_.store (-1, std::memory_order_relaxed);
         for (auto& v : voices)
@@ -284,7 +284,7 @@ public:
     // Adds this layer's output into L/R (does not clear).
     void render (float* L, float* R, int n, const LayerParams& P, const LayerContext& ctx)
     {
-        if (! P.arp.on && (arpNote >= 0 || ! arpHeld.empty())) { stopArpNote(); arpHeld.clear(); }
+        if (! P.arp.on && (! arpPending.empty() || ! arpHeld.empty())) { stopArpNote(); arpHeld.clear(); }
         if (scratchL.size() < (size_t) n) { scratchL.assign ((size_t) n, 0.0f); scratchR.assign ((size_t) n, 0.0f); }
         std::fill (scratchL.begin(), scratchL.begin() + n, 0.0f);
         std::fill (scratchR.begin(), scratchR.begin() + n, 0.0f);
@@ -354,15 +354,17 @@ private:
     std::vector<Held> arpHeld;
     std::vector<int> monoStack;
     double arpBeat = 0.0;
-    int arpCounter = 0, arpStep = 0, arpNote = -1;
-    bool arpGateOpen = false;
+    int arpCounter = 0, arpStep = 0;
+    struct ArpOff { int note; double at; float gate; };
+    std::vector<ArpOff> arpPending;          // arp notes still sounding, with the time (in steps) their gate closes
+    double arpClock = 0.0;
     Rng arpRng;
 
     //--------------------------------------------------------------------------
-    void releaseVoice (Voice& v)
+    void releaseVoice (Voice& v, float fastRelease = 0.0f)
     {
         v.released = true;
-        for (auto& e : v.env) e.noteOff();
+        for (auto& e : v.env) e.noteOff (fastRelease);
     }
 
     void initVoice (Voice& v, int note, float vel, const LayerParams& P)
@@ -465,15 +467,17 @@ private:
         if (! P.arp.on || arpHeld.empty()) arpPos_.store (-1, std::memory_order_relaxed);
     }
 
+    // Closes an arp note's gate. Below 100% the note is cut with a quick fade, so the gate is clearly heard even
+    // with a long envelope release; at 100% and above it simply releases and rings out as usual.
+    void releaseArpNote (int note, float gate)
+    {
+        for (auto& v : voices)
+            if (v.active && ! v.released && v.note == note) releaseVoice (v, gate < 0.999f ? 0.02f : 0.0f);
+    }
     void stopArpNote()
     {
-        if (arpNote >= 0)
-        {
-            for (auto& v : voices)
-                if (v.active && ! v.released && v.note == arpNote) releaseVoice (v);
-            arpNote = -1;
-        }
-        arpGateOpen = false;
+        for (auto& o : arpPending) releaseArpNote (o.note, o.gate);
+        arpPending.clear();
     }
 
     void arpTick (int m, const LayerParams& P, double bpm)
@@ -483,12 +487,15 @@ private:
         double stepsPerBeat = (double) kDivCyclesPerBeat[std::min (std::max (A.div, 0), kNumDivs - 1)];
         double inc = (double) m / (double) fs * bpm / 60.0 * stepsPerBeat;
         arpBeat += inc;
+        arpClock += inc;
         int len = std::max (1, std::min (A.length, kArpSteps));
 
-        if (arpGateOpen && arpBeat >= (double) A.gateLength && arpBeat < 1.0) { stopArpNote(); }
+        for (size_t i = 0; i < arpPending.size();)
+            if (arpClock >= arpPending[i].at) { releaseArpNote (arpPending[i].note, arpPending[i].gate); arpPending.erase (arpPending.begin() + (long) i); }
+            else ++i;
         if (arpBeat < 1.0) return;
         arpBeat -= std::floor (arpBeat);
-        stopArpNote();
+        const double stepStart = arpClock - arpBeat;
 
         int s = arpStep % len;
         arpStep = (arpStep + 1) % len;
@@ -513,8 +520,11 @@ private:
         ++arpCounter;
         const float wanted = quantizeToScale ((float) full[(size_t) idx].note + A.tune[s], A.scale, A.key);
         int note = (int) std::lround (clampf (wanted, 0.0f, 127.0f));
-        arpNote = note;
-        arpGateOpen = true;
+        // a note that is still ringing from an earlier step is closed first, then this step's note starts
+        for (size_t i = 0; i < arpPending.size();)
+            if (arpPending[i].note == note) { releaseArpNote (note, arpPending[i].gate); arpPending.erase (arpPending.begin() + (long) i); }
+            else ++i;
+        arpPending.push_back ({ note, stepStart + (double) A.gateLength, A.gateLength });
         startNote (note, full[(size_t) idx].vel, P);
     }
 
@@ -572,8 +582,20 @@ private:
         ip.drive = clampf (ip.drive + tg[TgInsertDrive], 0.0f, 1.0f);
         float noteHz = midiToHz (v.noteF + ctx.masterTune);
 
+        // A sequencer that drives the modulation matrix also gates the note: a rest or a closed gate silences it.
+        float seqGate = 1.0f;
+        for (int k = 0; k < kSeqs; ++k)
+        {
+            const SeqParams& sq = P.seq[k];
+            bool gating = sq.gateLength < 0.999f, used = false;
+            for (int i = 0; i < kMaxSteps && ! gating; ++i) if (i < sq.length && ! sq.stepOn[i]) gating = true;
+            if (! gating) continue;
+            for (const auto& slot : P.mod) used = used || (slot.on && slot.source == SrcSeq1 + k && slot.target != TgNone && slot.amount != 0.0f);
+            if (used && ! (sq.retrigger ? v.seq[k].gateOpen : gSeq[k].gateOpen)) seqGate = 0.0f;
+        }
+
         // amplitude, pan
-        float amp = src[SrcEnv1] * std::max (0.0f, 1.0f + tg[TgLayerGain]) * dbToGain (P.mixGainDb);
+        float amp = src[SrcEnv1] * seqGate * std::max (0.0f, 1.0f + tg[TgLayerGain]) * dbToGain (P.mixGainDb);
         float vpan = clampf (P.mixPan + tg[TgLayerPan], -1.0f, 1.0f);
         float pgL = std::cos ((vpan + 1.0f) * kPi * 0.25f) * 1.41421356f;
         float pgR = std::sin ((vpan + 1.0f) * kPi * 0.25f) * 1.41421356f;

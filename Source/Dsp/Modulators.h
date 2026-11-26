@@ -25,13 +25,14 @@ struct Envelope
     float value = 0.0f;
     float releaseFrom = 0.0f;
     float vel = 1.0f;
+    float relOverride = 0.0f;   // > 0: release at most this fast (used to cut gated notes short)
 
     static float shape (float x, float slope) { return std::pow (clampf (x, 0.0f, 1.0f), std::pow (4.0f, 0.5f - slope)); }
 
-    void noteOn (float velocity) { stage = Delay; pos = 0.0f; vel = velocity; }
-    void noteOff()
+    void noteOn (float velocity) { stage = Delay; pos = 0.0f; vel = velocity; relOverride = 0.0f; }
+    void noteOff (float fastRelease = 0.0f)
     {
-        if (stage != Idle && stage != Release) { releaseFrom = value; stage = Release; pos = 0.0f; }
+        if (stage != Idle && stage != Release) { releaseFrom = value; stage = Release; pos = 0.0f; relOverride = fastRelease; }
     }
     void kill() { stage = Idle; value = 0.0f; pos = 0.0f; }
     bool active() const { return stage != Idle; }
@@ -67,7 +68,8 @@ struct Envelope
             case Release:
             {
                 pos += dt;
-                float x = p.release <= 1.0e-4f ? 1.0f : pos / p.release;
+                const float rel = relOverride > 0.0f ? std::min (p.release, relOverride) : p.release;
+                float x = rel <= 1.0e-4f ? 1.0f : pos / rel;
                 value = releaseFrom * (1.0f - shape (x, p.slopeR));
                 if (x >= 1.0f) { stage = Idle; value = 0.0f; }
                 break;
@@ -169,8 +171,9 @@ struct StepSeq
     float pos = 0.0f;
     float value = 0.0f;
     bool finished = false;
+    bool gateOpen = true;      // whether the current step's gate is open (a rest or a closed gate is false)
 
-    void reset() { pos = 0.0f; value = 0.0f; finished = false; }
+    void reset() { pos = 0.0f; value = 0.0f; finished = false; gateOpen = true; }
 
     // The step that is playing right now.
     int stepIndex (const SeqParams& p) const
@@ -196,8 +199,17 @@ struct StepSeq
                 pos = (float) idx + (pos - std::floor (pos));
             }
         }
-        const bool open = p.stepOn[idx] && (pos - std::floor (pos)) < p.gateLength;
-        float target = open ? p.steps[idx] : 0.0f;
+        // Gate length: the fraction of each step the note is held. Above 1 a note carries on into the rest after it.
+        const float fr = pos - std::floor (pos);
+        bool open = p.stepOn[idx] && fr < p.gateLength;
+        float stepValue = p.steps[idx];
+        if (! p.stepOn[idx] && p.gateLength > 1.0f)
+        {
+            const int pidx = idx > loop ? idx - 1 : len - 1;
+            if (p.stepOn[pidx] && fr < p.gateLength - 1.0f) { open = true; stepValue = p.steps[pidx]; }
+        }
+        gateOpen = open;
+        float target = open ? stepValue : 0.0f;
         float coef = p.smooth <= 0.001f ? 1.0f : 1.0f - std::exp (-dt * (200.0f * (1.0f - p.smooth) + 2.0f));
         value += (target - value) * coef;
         return value * p.level;

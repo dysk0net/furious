@@ -279,7 +279,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("lvl", "Level", s.level, 0.0f, 1.0f);
         B.f ("smo", "Smooth", s.smooth, 0.0f, 1.0f);
         B.f ("shf", "Shuffle", s.shuffle, 0.0f, 1.0f);
-        B.f ("gate", "Gate Length", s.gateLength, 0.05f, 1.0f);
+        B.f ("gate", "Gate Length", s.gateLength, 0.05f, 2.0f);
         B.c ("scl", "Scale", s.scale, scaleNames);
         B.c ("key", "Key", s.key, keyNames);
     }
@@ -309,7 +309,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
     B.i ("oct", "Octaves", P.arp.octaves, 1, 4);
     B.c ("div", "Rate", P.arp.div, divs);
     B.i ("len", "Length", P.arp.length, 1, kArpSteps);
-    B.f ("gate", "Gate", P.arp.gateLength, 0.05f, 1.0f);
+    B.f ("gate", "Gate", P.arp.gateLength, 0.05f, 2.0f);
     B.f ("shf", "Shuffle", P.arp.shuffle, 0.0f, 1.0f);
     B.c ("scl", "Scale", P.arp.scale, scaleNames);
     B.c ("key", "Key", P.arp.key, keyNames);

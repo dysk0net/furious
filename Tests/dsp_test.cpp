@@ -673,7 +673,7 @@ int main()
         CHECK (modded > plain * 1.15, "a mod-matrix route to an FM amount opens up the FM");
         CHECK (TgFmEnd == TgFmBase + 8, "nine FM mod targets");
 
-        CHECK (FxNumTypes == 11, "ten Airwindows effects");
+        CHECK (FxNumTypes == 19, "eighteen Airwindows effects");
     }
 
     // 21. Airwindows effects

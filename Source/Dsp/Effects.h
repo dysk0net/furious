@@ -12,6 +12,14 @@
 #include "Airwindows/Disintegrate.h"
 #include "Airwindows/CloudCoat.h"
 #include "Airwindows/GlitchShifter.h"
+#include "Airwindows/Echojam.h"
+#include "Airwindows/ClearCoat.h"
+#include "Airwindows/StarChild2.h"
+#include "Airwindows/PitchDelay.h"
+#include "Airwindows/TapeHack2.h"
+#include "Airwindows/ChannelX.h"
+#include "Airwindows/ZAcidLowpass.h"
+#include "Airwindows/ZRegion2.h"
 #include <memory>
 #include <vector>
 
@@ -20,13 +28,15 @@ namespace stratum
 enum FxType
 {
     FxNone = 0, FxHallReverb, FxWeave, FxDubSub, FxGuitarHall, FxFatEQ, FxRetroBass, FxTakeCare, FxDisintegrate,
-    FxCloudCoat, FxGlitchShifter, FxNumTypes
+    FxCloudCoat, FxGlitchShifter,
+    FxEchojam, FxClearCoat, FxStarChild, FxPitchDelay, FxTapeHack, FxChannelX, FxZAcidLowpass, FxZRegion, FxNumTypes
 };
 
 inline const char* fxTypeName (int t)
 {
     static const char* n[FxNumTypes] = { "----", "Hall Reverb", "Weave", "DubSub2", "Guitar Hall", "FatEQ", "RetroBass", "TakeCare",
-                                          "Disintegrate", "CloudCoat", "GlitchShifter" };
+                                          "Disintegrate", "CloudCoat", "GlitchShifter",
+                                          "Echojam", "ClearCoat", "StarChild2", "PitchDelay", "TapeHack2", "ChannelX", "ZAcid Lowpass", "ZRegion2" };
     return n[std::min (std::max (t, 0), (int) FxNumTypes - 1)];
 }
 
@@ -46,7 +56,15 @@ inline const char* fxParamLabel (int type, int idx)
         { "Speed", "Rando", "Depth", "Regen", "Derez", "Buffer", "Output" },             // TakeCare
         { "Top dB", "BufSize", "Layers", "Filter", "", "", "" },                         // Disintegrate
         { "Select", "Sustain", "", "", "", "", "" },                                     // CloudCoat
-        { "Note", "Trim", "Tighten", "Feedbck", "", "", "" } };                          // GlitchShifter
+        { "Note", "Trim", "Tighten", "Feedbck", "", "", "" },                            // GlitchShifter
+        { "Select", "Regen", "Speed", "", "", "", "" },                                   // Echojam
+        { "Select", "", "", "", "", "", "" },                                   // ClearCoat
+        { "Sustain", "Grain", "", "", "", "", "" },                                   // StarChild2
+        { "Time", "Regen", "Freq", "Reso", "Pitch", "", "" },                                   // PitchDelay
+        { "Input", "Output", "", "", "", "", "" },                                   // TapeHack2
+        { "Console Type", "Drive", "Output", "", "", "", "" },                                   // ChannelX
+        { "Cutoff", "Over", "Under", "Meltdwn", "Drive", "Output", "" },                                   // ZAcidLowpass
+        { "Input", "First", "Last", "Poles", "", "", "" } };                                   // ZRegion2
     return labels[std::min (std::max (type, 0), (int) FxNumTypes - 1)][std::min (std::max (idx, 0), kFxKnobs - 1)];
 }
 
@@ -102,6 +120,14 @@ public:
             case FxDisintegrate: run (disintegrate, p, L, R, n, true); break;
             case FxCloudCoat:    run (cloudCoat, p, L, R, n, true); break;
             case FxGlitchShifter:run (glitch, p, L, R, n, true); break;
+            case FxEchojam: run (echojamFx, p, L, R, n, true); break;
+            case FxClearCoat: run (clearCoatFx, p, L, R, n, true); break;
+            case FxStarChild: run (starChildFx, p, L, R, n, true); break;
+            case FxPitchDelay: run (pitchDelayFx, p, L, R, n, true); break;
+            case FxTapeHack: run (tapeHackFx, p, L, R, n, true); break;
+            case FxChannelX: run (channelXFx, p, L, R, n, false); break;
+            case FxZAcidLowpass: run (zAcidLowpassFx, p, L, R, n, false); break;
+            case FxZRegion: run (zRegionFx, p, L, R, n, true); break;
             default: break;
         }
     }
@@ -138,6 +164,7 @@ private:
     {
         wipe (rock); wipe (weave); wipe (dubsub); wipe (guitarHall); wipe (fatEq); wipe (retroBass);
         wipe (takeCare); wipe (disintegrate); wipe (cloudCoat); wipe (glitch);
+        wipe (echojamFx); wipe (clearCoatFx); wipe (starChildFx); wipe (pitchDelayFx); wipe (tapeHackFx); wipe (channelXFx); wipe (zAcidLowpassFx); wipe (zRegionFx);
         lastType = FxNone;
     }
     // an effect that was switched off or swapped must not leave its old tail behind
@@ -153,6 +180,14 @@ private:
         if (t != FxDisintegrate) wipe (disintegrate);
         if (t != FxCloudCoat) wipe (cloudCoat);
         if (t != FxGlitchShifter) wipe (glitch);
+        if (t != FxEchojam) wipe (echojamFx);
+        if (t != FxClearCoat) wipe (clearCoatFx);
+        if (t != FxStarChild) wipe (starChildFx);
+        if (t != FxPitchDelay) wipe (pitchDelayFx);
+        if (t != FxTapeHack) wipe (tapeHackFx);
+        if (t != FxChannelX) wipe (channelXFx);
+        if (t != FxZAcidLowpass) wipe (zAcidLowpassFx);
+        if (t != FxZRegion) wipe (zRegionFx);
     }
 
     double fs = 44100.0;
@@ -167,5 +202,13 @@ private:
     std::unique_ptr<aw::Disintegrate> disintegrate;
     std::unique_ptr<aw::CloudCoat> cloudCoat;
     std::unique_ptr<aw::GlitchShifter> glitch;
+    std::unique_ptr<aw::Echojam> echojamFx;
+    std::unique_ptr<aw::ClearCoat> clearCoatFx;
+    std::unique_ptr<aw::StarChild2> starChildFx;
+    std::unique_ptr<aw::PitchDelay> pitchDelayFx;
+    std::unique_ptr<aw::TapeHack2> tapeHackFx;
+    std::unique_ptr<aw::ChannelX> channelXFx;
+    std::unique_ptr<aw::ZAcidLowpass> zAcidLowpassFx;
+    std::unique_ptr<aw::ZRegion2> zRegionFx;
 };
 } // namespace stratum

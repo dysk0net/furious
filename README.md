@@ -34,7 +34,8 @@ all code, wavetables and presets here were written from scratch.
 - 7-slot effect rack (drag a slot up or down in the list to reorder; its settings and mod routes move with it).
   Effects are ports of [Airwindows](https://github.com/airwindows/airwindows) plug-ins, added one at a time:
   **Hall Reverb** (kRockstar2), **Weave**, **DubSub2**, **Guitar Hall** (kGuitarHall2), **FatEQ**, **RetroBass**,
-  **TakeCare**, **Disintegrate**, **CloudCoat** and **GlitchShifter**. Each effect shows up to 7 knobs plus Mix; Mix is the
+  **TakeCare**, **Disintegrate**, **CloudCoat**, **GlitchShifter**, **Echojam**, **ClearCoat**, **StarChild**, **PitchDelay**, **TapeHack**,
+  **ChannelX**, **ZAcid Lowpass** and **ZRegion2**. Each effect shows up to 7 knobs plus Mix; Mix is the
   plug-in's own Dry/Wet where it has one, otherwise a dry/wet blend
 
 

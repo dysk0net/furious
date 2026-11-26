@@ -864,7 +864,7 @@ public:
         }
         slots[0]->setToggleState (true, juce::dontSendNotification);
         type = &R.make<Combo> (A, names (FxNumTypes, fxTypeName), "x1_type");
-        for (int i = 0; i < 5; ++i) knobs[i] = &R.make<Knob> (A, "", "x1_mix");
+        for (int i = 0; i <= kFxKnobs; ++i) knobs[i] = &R.make<Knob> (A, "", "x1_mix");
         for (auto* c : R.ctls) all.push_back (c);
         setLayer (0);
     }
@@ -876,7 +876,7 @@ public:
         if (t == shownType) return;
         shownType = t;
         knobs[0]->setLabel ("Mix");
-        for (int i = 0; i < 4; ++i) { knobs[i + 1]->setLabel (fxParamLabel (t, i)); knobs[i + 1]->setVisible (t != FxNone && fxParamLabel (t, i)[0] != 0); }
+        for (int i = 0; i < kFxKnobs; ++i) { knobs[i + 1]->setLabel (fxParamLabel (t, i)); knobs[i + 1]->setVisible (t != FxNone && fxParamLabel (t, i)[0] != 0); }
         repaint();
     }
     void refreshSlotButtons()
@@ -917,8 +917,9 @@ public:
         r.removeFromLeft (8);
         auto top = r.removeFromTop (22);
         type->setBounds (top.removeFromLeft (150));
-        auto kr = r.removeFromLeft (5 * 58);
-        for (int i = 0; i < 5; ++i) knobs[i]->setBounds (kr.getX() + i * 58, kr.getY(), 58, kr.getHeight());
+        const int kw = std::min (58, r.getWidth() / (kFxKnobs + 1));
+        auto kr = r.removeFromLeft ((kFxKnobs + 1) * kw);
+        for (int i = 0; i <= kFxKnobs; ++i) knobs[i]->setBounds (kr.getX() + i * kw, kr.getY(), kw, kr.getHeight());
     }
 
 private:
@@ -945,8 +946,8 @@ private:
     {
         const juce::String x = "x" + juce::String (slot + 1) + "_";
         type->setSuffix (x + "type");
-        const char* sfx[5] = { "mix", "a", "b", "c", "d" };
-        for (int i = 0; i < 5; ++i) knobs[i]->setSuffix (x + sfx[i]);
+        const char* sfx[kFxKnobs + 1] = { "mix", "a", "b", "c", "d", "e", "f", "g" };
+        for (int i = 0; i <= kFxKnobs; ++i) knobs[i]->setSuffix (x + sfx[i]);
         for (auto* c : R.ctls) c->rebind (layer);
         shownType = -1;
         refreshLabels();
@@ -957,7 +958,7 @@ private:
     Registry R;
     juce::OwnedArray<juce::TextButton> slots;
     Combo* type;
-    Knob* knobs[5];
+    Knob* knobs[kFxKnobs + 1];
     int layer = 0, slot = 0, shownType = -1;
     int dragFrom = -1, dropSlot = -1;
     juce::Point<float> dragPos;

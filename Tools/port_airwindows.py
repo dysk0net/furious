@@ -50,6 +50,8 @@ def port(name):
 #include <algorithm>
 
 namespace stratum {{ namespace aw {{
+namespace {name}Impl {{
+typedef int32_t VstInt32;
 namespace {name}Data {{
 {pre}
 }}
@@ -92,6 +94,8 @@ public:
 private:
     double sampleRate = 44100.0;
 {body}}};
+}}   // namespace {name}Impl (keeps this effect's constants from clashing with the others')
+using {name}Impl::{name};
 }} }} // namespace stratum::aw
 '''
     os.makedirs(OUT, exist_ok=True)

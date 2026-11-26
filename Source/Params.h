@@ -323,6 +323,9 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("b", "Control 2", x.b, 0.0f, 1.0f);
         B.f ("c", "Control 3", x.c, 0.0f, 1.0f);
         B.f ("d", "Control 4", x.d, 0.0f, 1.0f);
+        B.f ("e", "Control 5", x.e, 0.0f, 1.0f);
+        B.f ("f", "Control 6", x.f, 0.0f, 1.0f);
+        B.f ("g", "Control 7", x.g, 0.0f, 1.0f);
     }
 }
 

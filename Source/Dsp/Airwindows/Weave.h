@@ -7,6 +7,8 @@
 #include <algorithm>
 
 namespace stratum { namespace aw {
+namespace WeaveImpl {
+typedef int32_t VstInt32;
 namespace WeaveData {
 
 
@@ -199,4 +201,6 @@ private:
 	uint32_t fpdR;
 	//default stuff
 };
+}   // namespace WeaveImpl (keeps this effect's constants from clashing with the others')
+using WeaveImpl::Weave;
 } } // namespace stratum::aw

@@ -7,6 +7,8 @@
 #include <algorithm>
 
 namespace stratum { namespace aw {
+namespace kRockstar2Impl {
+typedef int32_t VstInt32;
 namespace kRockstar2Data {
 
 
@@ -1013,4 +1015,6 @@ private:
 	uint32_t fpdR;
 	//default stuff
 };
+}   // namespace kRockstar2Impl (keeps this effect's constants from clashing with the others')
+using kRockstar2Impl::kRockstar2;
 } } // namespace stratum::aw

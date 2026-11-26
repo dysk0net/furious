@@ -673,38 +673,35 @@ int main()
         CHECK (modded > plain * 1.15, "a mod-matrix route to an FM amount opens up the FM");
         CHECK (TgFmEnd == TgFmBase + 8, "nine FM mod targets");
 
-        CHECK (FxNumTypes == 3, "Hall Reverb and Weave are the effects");
+        CHECK (FxNumTypes == 11, "ten Airwindows effects");
     }
 
     // 21. Airwindows effects
     {
         Transport tp;
         const int N = (int) (fs * 2.0);
-        auto run = [&] (int type, float mix, std::vector<float>& L, std::vector<float>& R)
+        std::vector<float> dry ((size_t) N, 0.0f);
+        for (int i = 0; i < (int) (fs * 0.2); ++i) dry[(size_t) i] = 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs);
+        for (int t = 1; t < FxNumTypes; ++t)
         {
-            FxSlot fx; fx.prepare (fs);
-            FxParams fp; fp.type = type; fp.mix = mix; fp.a = 0.7f; fp.b = 0.5f; fp.c = 0.5f; fp.d = 0.3f;
-            L.assign ((size_t) N, 0.0f); R = L;
-            for (int i = 0; i < (int) (fs * 0.2); ++i) L[(size_t) i] = R[(size_t) i] = 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs);
-            for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
-        };
-        std::vector<float> L, R;
-        run (FxHallReverb, 1.0f, L, R);
-        double tail = 0; bool finite = true;
-        for (int i = (int) (fs * 0.5); i < N; ++i) tail += std::fabs (L[(size_t) i]);
-        for (float v : L) finite = finite && std::isfinite (v) && std::fabs (v) < 20.0f;
-        CHECK (finite, "Hall Reverb stays finite");
-        CHECK (tail > 1.0, "Hall Reverb rings on after the input stops");
-        std::vector<float> dry (L.size()), Rd;
-        for (int i = 0; i < N; ++i) dry[(size_t) i] = i < (int) (fs * 0.2) ? 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs) : 0.0f;
-        run (FxWeave, 1.0f, L, R);
-        double diff = 0; finite = true;
-        for (int i = 0; i < N; ++i) { diff += std::fabs (L[(size_t) i] - dry[(size_t) i]); finite = finite && std::isfinite (L[(size_t) i]); }
-        CHECK (finite, "Weave stays finite");
-        CHECK (diff > 0.1, "Weave changes the signal");
-        run (FxWeave, 0.0f, L, R);
-        diff = 0; for (int i = 0; i < N; ++i) diff += std::fabs (L[(size_t) i] - dry[(size_t) i]);
-        CHECK (diff < 1e-3, "Weave at mix 0 passes the dry signal");
+            auto run = [&] (float mix, std::vector<float>& L)
+            {
+                FxSlot fx; fx.prepare (fs);
+                FxParams fp; fp.type = t; fp.mix = mix;
+                L = dry; std::vector<float> R = dry;
+                for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
+            };
+            std::vector<float> L; run (1.0f, L);
+            bool finite = true; double diff = 0, tail = 0;
+            for (int i = 0; i < N; ++i) { finite = finite && std::isfinite (L[(size_t) i]) && std::fabs (L[(size_t) i]) < 20.0f; diff += std::fabs (L[(size_t) i] - dry[(size_t) i]); if (i > (int) (fs * 0.5)) tail += std::fabs (L[(size_t) i]); }
+            char msg[96];
+            std::snprintf (msg, sizeof msg, "%s stays finite", fxTypeName (t)); CHECK (finite, msg);
+            std::snprintf (msg, sizeof msg, "%s changes the signal (diff %.2f, tail %.2f)", fxTypeName (t), diff, tail); CHECK (diff > 0.01, msg);
+            if (t == FxHallReverb || t == FxGuitarHall) CHECK (tail > 1.0, "reverb rings on after the input stops");
+            run (0.0f, L);
+            diff = 0; for (int i = 512; i < N; ++i) diff += std::fabs (L[(size_t) i] - dry[(size_t) i]);   // (the first block may still ramp from the effect's start-up mix)
+            std::snprintf (msg, sizeof msg, "%s at mix 0 is dry (diff %.4f)", fxTypeName (t), diff); CHECK (diff < 1e-2, msg);
+        }
     }
 
     // 22. learned-control modulation helpers

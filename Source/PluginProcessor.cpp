@@ -432,13 +432,13 @@ void StratumProcessor::moveEffect (int layer, int from, int to)
         return 0.0f;
     };
 
-    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d" };
-    float old[kFxSlots][6];
+    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d", "e", "f", "g" };
+    float old[kFxSlots][9];
     for (int k = 0; k < kFxSlots; ++k)
-        for (int j = 0; j < 6; ++j)
+        for (int j = 0; j < 9; ++j)
             old[k][j] = plainOf (layerId (layer, "x" + juce::String (k + 1) + "_" + sfx[j]));
     for (int i = 0; i < kFxSlots; ++i)
-        for (int j = 0; j < 6; ++j)
+        for (int j = 0; j < 9; ++j)
             setPlain (layerId (layer, "x" + juce::String (i + 1) + "_" + sfx[j]), old[src[i]][j]);
 
     // modulation routes to an effect's mix follow it

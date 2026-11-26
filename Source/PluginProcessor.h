@@ -78,7 +78,7 @@ public:
     void clearUserWavetable (int layer, int osc);
 
     // Moves the effect in slot `from` to slot `to` of a layer; the ones in between shift by one.
-    // Settings, the trancegate pattern and modulation routes that aim at an effect's mix all follow the effect.
+    // Settings and modulation routes that aim at an effect's mix all follow the effect.
     void moveEffect (int layer, int from, int to);
 
     // Mod "Learn": host parameters that mod slots can be pointed at

@@ -224,11 +224,6 @@ std::unique_ptr<juce::XmlElement> StratumProcessor::makeStateXml()
         for (int s = 0; s < kArpSteps; ++s) on[s] = P.arp.stepOn[s] ? 1.0f : 0.0f;
         c->setAttribute ("arpOn" + juce::String (l), floatsToString (on, kArpSteps));
         c->setAttribute ("arpTune" + juce::String (l), floatsToString (P.arp.tune, kArpSteps));
-        for (int k = 0; k < kFxSlots; ++k)
-        {
-            c->setAttribute ("gateA" + juce::String (l) + "_" + juce::String (k), floatsToString (P.fx[k].gate[0], kMaxSteps));
-            c->setAttribute ("gateB" + juce::String (l) + "_" + juce::String (k), floatsToString (P.fx[k].gate[1], kMaxSteps));
-        }
     }
     return xml;
 }
@@ -284,13 +279,6 @@ void StratumProcessor::restoreFromXml (juce::XmlElement& xml)
             for (int s = 0; s < kArpSteps; ++s) P.arp.stepOn[s] = on[s] > 0.5f;
             stringToFloats (custom->getStringAttribute ("arpTune" + juce::String (l)), P.arp.tune, kArpSteps);
         }
-        for (int k = 0; k < kFxSlots; ++k)
-        {
-            if (custom->hasAttribute ("gateA" + juce::String (l) + "_" + juce::String (k)))
-                stringToFloats (custom->getStringAttribute ("gateA" + juce::String (l) + "_" + juce::String (k)), P.fx[k].gate[0], kMaxSteps);
-            if (custom->hasAttribute ("gateB" + juce::String (l) + "_" + juce::String (k)))
-                stringToFloats (custom->getStringAttribute ("gateB" + juce::String (l) + "_" + juce::String (k)), P.fx[k].gate[1], kMaxSteps);
-        }
     }
 }
 
@@ -310,8 +298,6 @@ void StratumProcessor::copyCustomState (const EngineParams& src)
         for (int k = 0; k < kSeqs; ++k) std::copy (s.seq[k].stepOn, s.seq[k].stepOn + kMaxSteps, d.seq[k].stepOn);
         std::copy (s.arp.stepOn, s.arp.stepOn + kArpSteps, d.arp.stepOn);
         std::copy (s.arp.tune, s.arp.tune + kArpSteps, d.arp.tune);
-        for (int k = 0; k < kFxSlots; ++k)
-            for (int c = 0; c < 2; ++c) std::copy (s.fx[k].gate[c], s.fx[k].gate[c] + kMaxSteps, d.fx[k].gate[c]);
     }
 }
 
@@ -446,22 +432,14 @@ void StratumProcessor::moveEffect (int layer, int from, int to)
         return 0.0f;
     };
 
-    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d", "div", "divr", "len" };
-    float old[kFxSlots][9];
+    static const char* sfx[] = { "type", "mix", "a", "b", "c", "d" };
+    float old[kFxSlots][6];
     for (int k = 0; k < kFxSlots; ++k)
-        for (int j = 0; j < 9; ++j)
+        for (int j = 0; j < 6; ++j)
             old[k][j] = plainOf (layerId (layer, "x" + juce::String (k + 1) + "_" + sfx[j]));
     for (int i = 0; i < kFxSlots; ++i)
-        for (int j = 0; j < 9; ++j)
+        for (int j = 0; j < 6; ++j)
             setPlain (layerId (layer, "x" + juce::String (i + 1) + "_" + sfx[j]), old[src[i]][j]);
-
-    // trancegate patterns are not host parameters
-    auto& fxp = engineParams.layer[layer].fx;
-    float gates[kFxSlots][2][kMaxSteps];
-    for (int k = 0; k < kFxSlots; ++k)
-        for (int c = 0; c < 2; ++c) std::copy (fxp[k].gate[c], fxp[k].gate[c] + kMaxSteps, gates[k][c]);
-    for (int i = 0; i < kFxSlots; ++i)
-        for (int c = 0; c < 2; ++c) std::copy (gates[src[i]][c], gates[src[i]][c] + kMaxSteps, fxp[i].gate[c]);
 
     // modulation routes to an effect's mix follow it
     for (int j = 0; j < kModSlots; ++j)

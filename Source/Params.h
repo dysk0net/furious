@@ -161,7 +161,6 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
     static const juce::StringArray sources = makeChoices (SrcNum, modSourceName);
     static const juce::StringArray targets = makeChoices (TgNum, modTargetName);
     static const juce::StringArray divs = makeChoices (kNumDivs, divName);
-    static const juce::StringArray divsRight = [] { juce::StringArray a; a.add ("Same as left"); a.addArray (makeChoices (kNumDivs, divName)); return a; }();
     static const juce::StringArray arpOrders = makeChoices (ArpNumOrders, arpOrderName);
     static const juce::StringArray lfoWaves = makeChoices (7, lfoWaveName);
     static const juce::StringArray mixOrders = makeChoices (2, mixOrderName);
@@ -324,9 +323,6 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("b", "Control 2", x.b, 0.0f, 1.0f);
         B.f ("c", "Control 3", x.c, 0.0f, 1.0f);
         B.f ("d", "Control 4", x.d, 0.0f, 1.0f);
-        B.c ("div", "Division", x.div, divs);
-        B.c ("divr", "Delay Right Division", x.divR, divsRight);
-        B.i ("len", "Length", x.gateLength, 1, kMaxSteps);
     }
 }
 
@@ -371,9 +367,6 @@ inline EngineParams makeDefaultEngineParams()
         P.gainDb = -6.0f;
         P.seq[0].level = 1.0f;
         for (int k = 0; k < kSeqs; ++k) for (int s = 0; s < kMaxSteps; ++s) P.seq[k].steps[s] = (s % 4 == 0) ? 0.8f : (s % 2 == 0 ? 0.3f : -0.2f);
-        for (int k = 0; k < kFxSlots; ++k) for (int s = 0; s < kMaxSteps; ++s) { P.fx[k].gate[0][s] = (float) (s % 2 == 0); P.fx[k].gate[1][s] = (float) (s % 4 != 3); }
-        P.fx[0].type = FxReverb; P.fx[0].mix = 0.2f; P.fx[0].a = 0.6f; P.fx[0].b = 0.4f; P.fx[0].c = 0.8f; P.fx[0].d = 0.1f;
-        P.fx[1].type = FxDelay; P.fx[1].mix = 0.0f; P.fx[1].a = 0.8f; P.fx[1].b = 0.4f; P.fx[1].c = 0.6f; P.fx[1].d = 0.5f;
     }
     E.masterDb = -3.0f;
     E.pitchBendRange = 2.0f;

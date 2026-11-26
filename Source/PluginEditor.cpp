@@ -814,48 +814,6 @@ private:
 };
 
 //==============================================================================
-class GateGrid : public juce::Component
-{
-public:
-    GateGrid (StratumProcessor& p) : proc (p) {}
-    int layer = 0, slot = 0;
-
-    void paint (juce::Graphics& g) override
-    {
-        auto r = getLocalBounds().toFloat();
-        g.setColour (col::bg); g.fillRoundedRectangle (r, 3.0f);
-        const auto& F = proc.engineParams.layer[layer].fx[slot];
-        int len = juce::jlimit (1, kMaxSteps, (int) rawParam (proc.apvts, layerId (layer, "x" + juce::String (slot + 1) + "_len")));
-        auto in = r.reduced (6.0f);
-        float sw = in.getWidth() / (float) len, lh = in.getHeight() / 2.0f;
-        for (int c = 0; c < 2; ++c)
-            for (int i = 0; i < len; ++i)
-            {
-                auto cell = juce::Rectangle<float> (in.getX() + (float) i * sw + 1.0f, in.getY() + (float) c * lh + 1.0f, sw - 2.0f, lh - 2.0f);
-                g.setColour (F.gate[c][i] > 0.5f ? col::orange : col::panelHi); g.fillRect (cell);
-                if (i % 4 == 0) { g.setColour (col::line); g.drawVerticalLine ((int) cell.getX() - 1, in.getY(), in.getBottom()); }
-            }
-    }
-    void mouseDown (const juce::MouseEvent& e) override { first = true; edit (e); }
-    void mouseDrag (const juce::MouseEvent& e) override { edit (e); }
-
-private:
-    StratumProcessor& proc;
-    bool first = true, paintVal = true;
-    void edit (const juce::MouseEvent& e)
-    {
-        auto& F = proc.engineParams.layer[layer].fx[slot];
-        int len = juce::jlimit (1, kMaxSteps, (int) rawParam (proc.apvts, layerId (layer, "x" + juce::String (slot + 1) + "_len")));
-        auto in = getLocalBounds().toFloat().reduced (6.0f);
-        int i = (int) ((e.position.x - in.getX()) / in.getWidth() * (float) len);
-        int c = e.position.y < in.getCentreY() ? 0 : 1;
-        if (i < 0 || i >= len) return;
-        if (first) { paintVal = F.gate[c][i] < 0.5f; first = false; }
-        F.gate[c][i] = paintVal ? 1.0f : 0.0f;
-        repaint();
-    }
-};
-
 // A slot button in the effects list that can be dragged up or down to reorder the effects.
 class FxSlotButton : public juce::TextButton
 {
@@ -889,11 +847,10 @@ private:
 class FxPanel : public juce::Component
 {
 public:
-    FxPanel (StratumProcessor& p, std::vector<Ctl*>& all) : proc (p), grid (p)
+    FxPanel (StratumProcessor& p, std::vector<Ctl*>& all) : proc (p)
     {
         R.parent = this;
         auto& A = p.apvts;
-        addAndMakeVisible (grid);
         for (int i = 0; i < kFxSlots; ++i)
         {
             auto* b = new FxSlotButton();
@@ -907,15 +864,12 @@ public:
         }
         slots[0]->setToggleState (true, juce::dontSendNotification);
         type = &R.make<Combo> (A, names (FxNumTypes, fxTypeName), "x1_type");
-        div = &R.make<Combo> (A, names (kNumDivs, divName), "x1_div");
-        { juce::StringArray r; r.add ("R: same as left"); for (auto& n : names (kNumDivs, divName)) r.add ("R: " + n); divR = &R.make<Combo> (A, r, "x1_divr"); }
-        len = &R.make<DragLabel> (A, "Steps", "x1_len");
         for (int i = 0; i < 5; ++i) knobs[i] = &R.make<Knob> (A, "", "x1_mix");
         for (auto* c : R.ctls) all.push_back (c);
         setLayer (0);
     }
 
-    void setLayer (int l) { layer = l; grid.layer = l; applySlot(); }
+    void setLayer (int l) { layer = l; applySlot(); }
     void refreshLabels()
     {
         int t = (int) rawParam (proc.apvts, layerId (layer, "x" + juce::String (slot + 1) + "_type"));
@@ -923,11 +877,6 @@ public:
         shownType = t;
         knobs[0]->setLabel ("Mix");
         for (int i = 0; i < 4; ++i) { knobs[i + 1]->setLabel (fxParamLabel (t, i)); knobs[i + 1]->setVisible (t != FxNone && fxParamLabel (t, i)[0] != 0); }
-        div->setVisible (t == FxDelay || t == FxTrancegate || t == FxSidechain);
-        divR->setVisible (t == FxDelay);
-        shownDelay = t == FxDelay;
-        len->setVisible (t == FxTrancegate);
-        grid.setVisible (t == FxTrancegate);
         repaint();
     }
     void refreshSlotButtons()
@@ -968,16 +917,8 @@ public:
         r.removeFromLeft (8);
         auto top = r.removeFromTop (22);
         type->setBounds (top.removeFromLeft (150));
-        top.removeFromLeft (10);
-        div->setBounds (top.removeFromLeft (112));
-        top.removeFromLeft (10);
-        divR->setBounds (top.removeFromLeft (150));
-        top.removeFromLeft (10);
-        len->setBounds (top.removeFromLeft (90));
         auto kr = r.removeFromLeft (5 * 58);
         for (int i = 0; i < 5; ++i) knobs[i]->setBounds (kr.getX() + i * 58, kr.getY(), 58, kr.getHeight());
-        r.removeFromLeft (8);
-        grid.setBounds (r);
     }
 
 private:
@@ -993,17 +934,17 @@ private:
         {
             proc.moveEffect (layer, from, to);
             const int sel = fxNewPosition (slot, from, to);      // keep the selection on the same effect
-            slot = sel; grid.slot = sel;
+            slot = sel;
             slots[sel]->setToggleState (true, juce::dontSendNotification);
             applySlot();
         }
         repaint();
     }
-    void selectSlot (int s) { slot = s; grid.slot = s; applySlot(); }
+    void selectSlot (int s) { slot = s; applySlot(); }
     void applySlot()
     {
         const juce::String x = "x" + juce::String (slot + 1) + "_";
-        type->setSuffix (x + "type"); div->setSuffix (x + "div"); divR->setSuffix (x + "divr"); len->setSuffix (x + "len");
+        type->setSuffix (x + "type");
         const char* sfx[5] = { "mix", "a", "b", "c", "d" };
         for (int i = 0; i < 5; ++i) knobs[i]->setSuffix (x + sfx[i]);
         for (auto* c : R.ctls) c->rebind (layer);
@@ -1014,11 +955,8 @@ private:
 
     StratumProcessor& proc;
     Registry R;
-    GateGrid grid;
     juce::OwnedArray<juce::TextButton> slots;
-    Combo *type, *div, *divR;
-    bool shownDelay = false;
-    DragLabel* len;
+    Combo* type;
     Knob* knobs[5];
     int layer = 0, slot = 0, shownType = -1;
     int dragFrom = -1, dropSlot = -1;

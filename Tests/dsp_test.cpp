@@ -63,7 +63,7 @@ static void initPatch (EngineParams& E)
     P.env[1].decay = 0.6f; P.env[1].sustain = 0.2f;
     P.mod[0] = { true, SrcLfo1, TgOscMorph1, 0.5f };
     P.lfo[0].rateHz = 0.8f;
-    P.fx[0].type = FxReverb; P.fx[0].mix = 0.25f;
+    P.fx[0].type = FxHallReverb; P.fx[0].mix = 0.25f;
 }
 
 #define CHECK(cond, msg) do { if (! (cond)) { std::printf ("FAIL: %s\n", msg); ++failures; } else std::printf ("ok:   %s\n", msg); } while (0)
@@ -144,7 +144,7 @@ int main()
     for (int t = 1; t < FxNumTypes; ++t)
     {
         initPatch (*E);
-        for (int k = 0; k < kFxSlots; ++k) { E->layer[0].fx[k].type = t; E->layer[0].fx[k].mix = 0.5f; for (int st = 0; st < kMaxSteps; ++st) { E->layer[0].fx[k].gate[0][st] = (float) (st % 2 == 0); E->layer[0].fx[k].gate[1][st] = (float) (st % 3 == 0); } }
+        for (int k = 0; k < kFxSlots; ++k) { E->layer[0].fx[k].type = t; E->layer[0].fx[k].mix = 0.5f; }
         eng->panic (); eng->noteOn (1, 57, 1.0f, *E);
         s = renderSeconds (*eng, *E, 0.8f, fs);
         char msg[96]; std::snprintf (msg, sizeof msg, "effect %-11s x7 stable (rms %.3f peak %.3f)", fxTypeName (t), s.rms, s.peak);
@@ -209,8 +209,7 @@ int main()
         LayerParams& P = E->layer[l];
         P = LayerParams(); P.enabled = true;
         for (int o = 0; o < 3; ++o) { P.osc[o].on = true; P.osc[o].unison = 8; P.osc[o].table = o; }
-        P.fx[0].type = FxReverb; P.fx[1].type = FxDelay; P.fx[2].type = FxChorus; P.fx[3].type = FxPhaser;
-        P.fx[4].type = FxDistortion; P.fx[5].type = FxCompressor; P.fx[6].type = FxTrancegate;
+        for (int k = 0; k < kFxSlots; ++k) P.fx[k].type = (k % 2) ? FxWeave : FxHallReverb;
         P.voicing.voiceLimit = 8;
         for (int n = 0; n < 8; ++n) eng->noteOn (1, 36 + n * 3, 1.0f, *E);
     }
@@ -674,55 +673,38 @@ int main()
         CHECK (modded > plain * 1.15, "a mod-matrix route to an FM amount opens up the FM");
         CHECK (TgFmEnd == TgFmBase + 8, "nine FM mod targets");
 
-        // shimmer: energy one octave above the input appears in the tail
-        auto tailAt = [&] (float shimmerAmt, float hz)
-        {
-            FxSlot fx; fx.prepare (fs);
-            FxParams fp; fp.type = FxShimmer; fp.mix = 1.0f; fp.a = 0.8f; fp.b = 0.3f; fp.c = shimmerAmt; fp.d = 0.5f;
-            Transport tp; tp.bpm = 120.0; tp.ppq = 0.0;
-            const int N = (int) (fs * 3.0);
-            std::vector<float> L ((size_t) N), R ((size_t) N);
-            for (int i = 0; i < N; ++i) { float x = i < (int) (fs * 0.3) ? 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs) : 0.0f; L[(size_t) i] = R[(size_t) i] = x; }
-            for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
-            double re = 0, im = 0; int a = (int) (fs * 1.2), b = N;
-            for (int i = a; i < b; ++i) { re += L[(size_t) i] * std::cos (kTwoPi * hz * (float) i / fs); im += L[(size_t) i] * std::sin (kTwoPi * hz * (float) i / fs); }
-            bool finite = true; for (float v : L) finite = finite && std::isfinite (v) && std::fabs (v) < 20.0f;
-            CHECK (finite, "shimmer stays finite");
-            return std::sqrt (re * re + im * im) / (double) (b - a);
-        };
-        const double up0 = tailAt (0.0f, 440.0f), up1 = tailAt (1.0f, 440.0f);
-        std::printf ("      (440 Hz in the tail: shimmer 0 -> %.5f, shimmer 1 -> %.5f)\n", up0, up1);
-        CHECK (up1 > up0 * 3.0, "shimmer builds energy an octave above the input");
-        CHECK (FxNumTypes == 12, "12 effect types");
+        CHECK (FxNumTypes == 3, "Hall Reverb and Weave are the effects");
     }
 
-    // 21. delay with separate left and right times
+    // 21. Airwindows effects
     {
-        int iQuarter = -1, iDotEighth = -1;
-        for (int i = 0; i < kNumDivs; ++i)
-        {
-            if (std::fabs (kDivCyclesPerBeat[i] - 1.0f) < 1e-3f) iQuarter = i;
-            if (std::fabs (kDivCyclesPerBeat[i] - 2.0f / 1.5f) < 1e-3f) iDotEighth = i;
-        }
-        CHECK (iQuarter >= 0 && iDotEighth >= 0, "found the 1/4 and dotted 1/8 divisions");
-        auto echoAt = [&] (int div, int divR)
+        Transport tp;
+        const int N = (int) (fs * 2.0);
+        auto run = [&] (int type, float mix, std::vector<float>& L, std::vector<float>& R)
         {
             FxSlot fx; fx.prepare (fs);
-            FxParams fp; fp.type = FxDelay; fp.mix = 1.0f; fp.a = 0.5f; fp.b = 0.0f; fp.c = 1.0f; fp.d = 0.0f; fp.div = div; fp.divR = divR;
-            Transport tp; tp.bpm = 120.0; tp.ppq = 0.0;
-            const int N = (int) fs;
-            std::vector<float> L ((size_t) N, 0.0f), R ((size_t) N, 0.0f);
-            L[100] = R[100] = 1.0f;
+            FxParams fp; fp.type = type; fp.mix = mix; fp.a = 0.7f; fp.b = 0.5f; fp.c = 0.5f; fp.d = 0.3f;
+            L.assign ((size_t) N, 0.0f); R = L;
+            for (int i = 0; i < (int) (fs * 0.2); ++i) L[(size_t) i] = R[(size_t) i] = 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs);
             for (int i = 0; i < N; i += 512) { int n = std::min (512, N - i); fx.process (L.data() + i, R.data() + i, n, fp, tp); }
-            int pl = 0, pr = 0; float ml = 0, mr = 0;
-            for (int i = 1000; i < N; ++i) { if (std::fabs (L[(size_t) i]) > ml) { ml = std::fabs (L[(size_t) i]); pl = i; } if (std::fabs (R[(size_t) i]) > mr) { mr = std::fabs (R[(size_t) i]); pr = i; } }
-            return std::make_pair (pl - 100, pr - 100);
         };
-        auto same = echoAt (iQuarter, 0);                              // right follows left
-        auto split = echoAt (iQuarter, iDotEighth + 1);                // left 1/4, right dotted 1/8
-        const int quarter = (int) (fs * 0.5), dotted = (int) (fs * 0.375);
-        CHECK (std::abs (same.first - quarter) < 4 && std::abs (same.second - quarter) < 4, "right follows left when set to 'same as left'");
-        CHECK (std::abs (split.first - quarter) < 4 && std::abs (split.second - dotted) < 4, "left 1/4 and right dotted 1/8 give different echo times");
+        std::vector<float> L, R;
+        run (FxHallReverb, 1.0f, L, R);
+        double tail = 0; bool finite = true;
+        for (int i = (int) (fs * 0.5); i < N; ++i) tail += std::fabs (L[(size_t) i]);
+        for (float v : L) finite = finite && std::isfinite (v) && std::fabs (v) < 20.0f;
+        CHECK (finite, "Hall Reverb stays finite");
+        CHECK (tail > 1.0, "Hall Reverb rings on after the input stops");
+        std::vector<float> dry (L.size()), Rd;
+        for (int i = 0; i < N; ++i) dry[(size_t) i] = i < (int) (fs * 0.2) ? 0.4f * std::sin (kTwoPi * 220.0f * (float) i / fs) : 0.0f;
+        run (FxWeave, 1.0f, L, R);
+        double diff = 0; finite = true;
+        for (int i = 0; i < N; ++i) { diff += std::fabs (L[(size_t) i] - dry[(size_t) i]); finite = finite && std::isfinite (L[(size_t) i]); }
+        CHECK (finite, "Weave stays finite");
+        CHECK (diff > 0.1, "Weave changes the signal");
+        run (FxWeave, 0.0f, L, R);
+        diff = 0; for (int i = 0; i < N; ++i) diff += std::fabs (L[(size_t) i] - dry[(size_t) i]);
+        CHECK (diff < 1e-3, "Weave at mix 0 passes the dry signal");
     }
 
     // 22. learned-control modulation helpers

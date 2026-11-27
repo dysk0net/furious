@@ -25,7 +25,11 @@ static juce::File userDataFolder()
 
 
 StratumProcessor::StratumProcessor()
-    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+    // The first input bus is the host's "main" input and is off by default; the second is a sidechain, which is where Ableton
+    // routes another track's audio ("Audio From") for the oscillators set to Audio In.
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                       .withInput ("Input", juce::AudioChannelSet::stereo(), false)
+                                       .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "STRATUM", createLayout()),
       engineParams (makeDefaultEngineParams()),
       engine (new Engine())
@@ -43,12 +47,19 @@ void StratumProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sampleRateHz = sampleRate;
     maxBlock = std::max (samplesPerBlock, 512);
     engine->prepare (sampleRate, maxBlock);
+    inBufL.assign ((size_t) std::max (samplesPerBlock, 512), 0.0f); inBufR = inBufL;
     held.reset(); sustained.reset(); sustainDown = false;
 }
 
 bool StratumProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) return false;
+    for (int i = 0; i < layouts.inputBuses.size(); ++i)
+    {
+        const auto& s = layouts.inputBuses.getReference (i);
+        if (! s.isDisabled() && s != juce::AudioChannelSet::stereo() && s != juce::AudioChannelSet::mono()) return false;
+    }
+    return true;
 }
 
 void StratumProcessor::handleMidi (const juce::MidiMessage& m)
@@ -101,7 +112,7 @@ void StratumProcessor::renderChunk (float* l, float* r, int start, int count)
         int c = std::min (count, maxBlock);
         Transport tp = transport;
         tp.ppq += (double) start * transport.bpm / 60.0 / sampleRateHz;
-        engine->render (l + start, r + start, c, engineParams, tp);
+        engine->render (l + start, r + start, c, engineParams, tp, haveInput ? inBufL.data() + start : nullptr, haveInput ? inBufR.data() + start : nullptr);
         start += c; count -= c;
     }
 }
@@ -139,6 +150,20 @@ void StratumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     juce::ScopedNoDenormals noDenormals;
     const auto t0 = juce::Time::getHighResolutionTicks();
     const int n = buffer.getNumSamples();
+
+    // Audio in: take the first enabled input bus (the sidechain, or the main input) before the buffer is cleared
+    haveInput = false;
+    if ((int) inBufL.size() < n) { inBufL.assign ((size_t) n, 0.0f); inBufR = inBufL; }
+    for (int b = 0; b < getBusCount (true) && ! haveInput; ++b)
+    {
+        auto* bus = getBus (true, b);
+        if (bus == nullptr || ! bus->isEnabled() || bus->getNumberOfChannels() < 1) continue;
+        auto in = getBusBuffer (buffer, true, b);
+        const float* a = in.getReadPointer (0);
+        const float* c = in.getReadPointer (in.getNumChannels() > 1 ? 1 : 0);
+        std::copy (a, a + n, inBufL.begin()); std::copy (c, c + n, inBufR.begin());
+        haveInput = true;
+    }
     buffer.clear();
     if (buffer.getNumChannels() < 2) return;
 

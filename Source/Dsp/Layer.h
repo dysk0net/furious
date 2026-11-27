@@ -32,6 +32,7 @@ struct OscParams
     float cent = 0.0f;
     bool keyTrack = true;
     bool skipFilter = false;
+    bool audioIn = false;              // the plug-in's audio input plays in place of the wavetable (through the voice's envelope, filter and insert)
     int unison = 1;
     float detune = 0.25f, spread = 0.5f;
     float volume = 0.7f, balance = 0.0f;
@@ -197,6 +198,8 @@ struct LayerContext
     float modWheel = 0.0f;
     float pitchBendSemis = 0.0f;
     float masterTune = 0.0f;          // semitones, key offset
+    const float* inL = nullptr;       // the plug-in's audio input for this block (null = silence)
+    const float* inR = nullptr;
 };
 
 //==============================================================================
@@ -299,7 +302,7 @@ public:
             for (int k = 0; k < kLfos; ++k) gLfoVal[k] = gLfo[k].advance (dt, P.lfo[k], tp.bpm);
             for (int k = 0; k < kSeqs; ++k) gSeqVal[k] = gSeq[k].advance (dt, P.seq[k], tp.bpm);
             for (auto& v : voices)
-                if (v.active) renderVoice (v, scratchL.data() + pos, scratchR.data() + pos, m, P, ctx);
+                if (v.active) renderVoice (v, scratchL.data() + pos, scratchR.data() + pos, m, P, ctx, ctx.inL ? ctx.inL + pos : nullptr, ctx.inR ? ctx.inR + pos : nullptr);
         }
 
         publishPositions (P);
@@ -531,7 +534,7 @@ private:
     //--------------------------------------------------------------------------
     static float frac (float x) { return x - std::floor (x); }
 
-    void renderVoice (Voice& v, float* L, float* R, int m, const LayerParams& P, const LayerContext& ctx)
+    void renderVoice (Voice& v, float* L, float* R, int m, const LayerParams& P, const LayerContext& ctx, const float* inL = nullptr, const float* inR = nullptr)
     {
         const float dt = (float) m / fs;
         const double bpm = ctx.transport.bpm;
@@ -605,7 +608,7 @@ private:
         // per-oscillator chunk setup
         struct OscCtx
         {
-            bool on; int table, mip, nu; const UserTable* user; float morph, vol, freq, detuneCents, norm, tubeNorm;
+            bool on, ain; int table, mip, nu; const UserTable* user; float morph, vol, freq, detuneCents, norm, tubeNorm;
             float fm[kOscs];
             float inc[kMaxUnison], gl[kMaxUnison], gr[kMaxUnison];
         };
@@ -615,6 +618,7 @@ private:
         {
             const OscParams& op = P.osc[o];
             oc[o].on = op.on;
+            oc[o].ain = op.audioIn;
             if (! op.on) continue;
             float base = op.keyTrack ? v.noteF + ctx.masterTune + ctx.pitchBendSemis : 60.0f;
             float semis = base + (float) op.semi + op.cent * 0.01f + tg[TgOscPitch1 + o] * 24.0f;
@@ -627,7 +631,7 @@ private:
             const float mipFreq = oc[o].freq * (1.0f + oc[o].detuneCents * 0.0006f) * (op.fx == OfxHardSync ? 1.0f + op.fxAmt * 7.0f : 1.0f) * (P.fmMode ? 2.0f : 1.0f);
             oc[o].user = op.user;
             oc[o].mip = op.user != nullptr ? UserTable::mipFor (mipFreq, fs) : WaveTables::mipFor (mipFreq, fs);
-            oc[o].nu = std::max (1, std::min (op.unison, kMaxUnison));
+            oc[o].nu = op.audioIn ? 1 : std::max (1, std::min (op.unison, kMaxUnison));       // audio in has no unison
             oc[o].norm = 1.0f / std::sqrt ((float) oc[o].nu);
             oc[o].tubeNorm = oscFxTubeNorm (op.fxAmt);
             for (int u = 0; u < oc[o].nu; ++u)
@@ -651,6 +655,13 @@ private:
                 const OscParams& op = P.osc[o];
                 const int nu = oc[o].nu;
                 float uL = 0.0f, uR = 0.0f;
+                if (oc[o].ain)
+                {
+                    const float xl = inL ? inL[i] : 0.0f, xr = inR ? inR[i] : xl;
+                    fmNext[o][0] = 0.5f * (xl + xr);
+                    uL = xl * oc[o].gl[0]; uR = xr * oc[o].gr[0];
+                }
+                else
                 for (int u = 0; u < nu; ++u)
                 {
                     float inc = oc[o].inc[u];
@@ -777,12 +788,13 @@ public:
     float layerPeak (int l) const { return peaks[l]; }
     float outPeak() const { return outPk; }
 
-    void render (float* L, float* R, int n, const EngineParams& E, const Transport& tp)
+    void render (float* L, float* R, int n, const EngineParams& E, const Transport& tp, const float* inL = nullptr, const float* inR = nullptr)
     {
         std::fill (L, L + n, 0.0f);
         std::fill (R, R + n, 0.0f);
         LayerContext ctx;
         ctx.transport = tp;
+        ctx.inL = inL; ctx.inR = inR;
         for (int k = 0; k < 3; ++k) ctx.macros[k] = E.macros[k];
         ctx.modWheel = E.modWheel;
         ctx.pitchBendSemis = E.pitchBend * E.pitchBendRange;

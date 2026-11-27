@@ -764,6 +764,36 @@ int main()
         CHECK (a2 > a1 * 1.05, "an arp gate above 100% lets notes overlap");
     }
 
+    // 24. audio in: an oscillator plays the host's input instead of its wavetable
+    {
+        initPatch (*E);
+        LayerParams& P = E->layer[0];
+        for (auto& fxs : P.fx) fxs.type = FxNone;
+        P.filter.type = FltOff;
+        P.osc[0].on = true; P.osc[0].audioIn = true; P.osc[0].volume = 1.0f; P.osc[0].unison = 8;
+        P.osc[1].on = false; P.osc[2].on = false;
+        const int N = 4096;
+        std::vector<float> in ((size_t) N), L ((size_t) N), R ((size_t) N);
+        for (int i = 0; i < N; ++i) in[(size_t) i] = 0.5f * std::sin (kTwoPi * 1000.0f * (float) i / fs);
+        auto run = [&] (const float* inp, double& energyOut, double& tone)
+        {
+            eng->panic(); eng->noteOn (1, 48, 1.0f, *E);
+            Transport tp;
+            for (int i = 0; i < N; i += 512) eng->render (L.data() + i, R.data() + i, 512, *E, tp, inp ? inp + i : nullptr, inp ? inp + i : nullptr);
+            double e = 0, re = 0, im = 0;
+            for (int i = 2048; i < N; ++i) { e += L[(size_t) i] * L[(size_t) i]; re += L[(size_t) i] * std::cos (kTwoPi * 1000.0f * (float) i / fs); im += L[(size_t) i] * std::sin (kTwoPi * 1000.0f * (float) i / fs); }
+            energyOut = std::sqrt (e / 2048.0); tone = 2.0 * std::sqrt (re * re + im * im) / 2048.0;
+        };
+        double e0, t0, e1, t1;
+        run (nullptr, e0, t0); run (in.data(), e1, t1);
+        std::printf("      (no input rms %.5f, with a 1 kHz input rms %.4f, 1 kHz amplitude %.4f)\n", e0, e1, t1);
+        CHECK (e0 < 1e-6, "an Audio In oscillator is silent without input");
+        CHECK (e1 > 0.01 && t1 > 0.8 * e1 * 1.414 * 0.9, "the host input is heard, unison and wavetable do not touch it");
+        P.osc[0].audioIn = false; P.osc[0].table = 0;
+        run (in.data(), e0, t0);
+        CHECK (t0 < 0.05, "with Audio In off the input is ignored");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }

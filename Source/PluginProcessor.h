@@ -97,6 +97,8 @@ private:
     void restoreFromXml (juce::XmlElement& xml);
     void handleMidi (const juce::MidiMessage& m);
     void renderChunk (float* l, float* r, int start, int count);
+    std::vector<float> inBufL, inBufR;      // the audio input of this block (copied before the output is cleared)
+    bool haveInput = false;
     juce::String loadWavetableIntoSlot (int slot, const juce::String& relativePath);
     void reloadUserWavetables();
 

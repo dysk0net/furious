@@ -291,6 +291,7 @@ public:
         cent = &R.make<DragLabel> (A, "Cent", pre + "cent");
         key = &R.make<Toggle> (A, "Key", pre + "key");
         skip = &R.make<Toggle> (A, "Skip", pre + "skip");
+        ain = &R.make<Toggle> (A, "In", pre + "ain");
         uni = &R.make<DragLabel> (A, "Unison", pre + "uni");
         det = &R.make<Knob> (A, "Detune", pre + "det");
         spr = &R.make<Knob> (A, "Spread", pre + "spr");
@@ -338,9 +339,10 @@ public:
         auto r = getLocalBounds().reduced (4);
         auto top = r.removeFromTop (22);
         on->setBounds (top.removeFromLeft (18));
-        title.setBounds (top.removeFromLeft (66));
-        semi->setBounds (top.removeFromLeft (84)); cent->setBounds (top.removeFromLeft (92));
+        title.setBounds (top.removeFromLeft (52));
+        semi->setBounds (top.removeFromLeft (78)); cent->setBounds (top.removeFromLeft (84));
         key->setBounds (top.removeFromLeft (56));
+        ain->setBounds (top.removeFromLeft (34));
         fmOn->setBounds (top.removeFromLeft (50));
         { auto extra = top.removeFromLeft (92); skip->setBounds (extra.removeFromLeft (56)); fmType->setBounds (extra.reduced (0, 1)); }
         fxType->setBounds (top.removeFromRight (130).reduced (0, 1));
@@ -371,7 +373,7 @@ private:
     Registry R;
     WaveDisplay wave;
     juce::Label title;
-    Toggle *on, *key, *skip, *fmOn;
+    Toggle *on, *key, *skip, *fmOn, *ain;
     Knob* fmIn[3];
     DragLabel *semi, *cent, *uni, *morph, *phase, *rnd;
     Knob *det, *spr, *bass, *treb, *fxAmt, *fxTune, *bal, *vol;

@@ -188,6 +188,7 @@ inline void describeLayer (ParamBinder& B, LayerParams& P, bool& solo, int layer
         B.f ("cent", "Cent", op.cent, -100.0f, 100.0f);
         B.b ("key", "Key Track", op.keyTrack);
         B.b ("skip", "Skip To Mix", op.skipFilter);
+        B.b ("ain", "Audio In", op.audioIn);
         B.i ("uni", "Unison", op.unison, 1, kMaxUnison);
         B.f ("det", "Detune", op.detune, 0.0f, 1.0f);
         B.f ("spr", "Spread", op.spread, 0.0f, 1.0f);

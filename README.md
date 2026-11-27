@@ -30,6 +30,10 @@ all code, wavetables and presets here were written from scratch.
 - Scale lock for the arpeggiator and for each sequencer (when it drives an oscillator's pitch): Major, Minor,
   Phrygian, Blues, Phrygian Dominant, Double Harmonic, Hungarian Minor, Hirajoshi and Whole Tone, in any key.
   Notes snap to the nearest scale note; a note exactly halfway between two goes to the lower one
+- **Audio In** on any oscillator (the **In** switch in its header): the plug-in's audio input plays in place of the
+  wavetable, through the voice's envelope, filter and insert, so notes gate and shape external audio. In Ableton, route
+  another track to the plug-in's sidechain (the **Audio From** chooser in the plug-in's title bar). Each playing voice
+  carries its own copy of the input, so chords add up; unison does not apply to it
 - Mono legato with glide, voice limit, MIDI channel and key range per layer
 - 7-slot effect rack (drag a slot up or down in the list to reorder; its settings and mod routes move with it).
   Effects are ports of [Airwindows](https://github.com/airwindows/airwindows) plug-ins, added one at a time:

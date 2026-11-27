@@ -794,6 +794,33 @@ int main()
         CHECK (t0 < 0.05, "with Audio In off the input is ignored");
     }
 
+    // 25. audio in as an FM modulator
+    {
+        initPatch (*E);
+        LayerParams& P = E->layer[0];
+        for (auto& fxs : P.fx) fxs.type = FxNone;
+        P.filter.type = FltOff; P.fmMode = true;
+        P.osc[0].on = true; P.osc[0].audioIn = true; P.osc[0].volume = 0.0f;       // silent itself, only modulates
+        P.osc[1].on = true; P.osc[1].unison = 1; P.osc[1].volume = 1.0f; P.osc[1].table = 0; P.osc[1].fmIn[0] = 0.0f;
+        P.osc[2].on = false;
+        const int N = 8192;
+        std::vector<float> in ((size_t) N), L ((size_t) N), R ((size_t) N);
+        for (int i = 0; i < N; ++i) in[(size_t) i] = 0.8f * std::sin (kTwoPi * 300.0f * (float) i / fs);
+        auto rough = [&] (float amt)
+        {
+            P.osc[1].fmIn[0] = amt;
+            eng->panic(); eng->noteOn (1, 57, 1.0f, *E);
+            Transport tp;
+            for (int i = 0; i < N; i += 512) eng->render (L.data() + i, R.data() + i, 512, *E, tp, in.data() + i, in.data() + i);
+            double d = 0, e = 0; for (int i = 2048; i < N; ++i) { d += std::fabs (L[(size_t) i] - L[(size_t) i - 1]); e += std::fabs (L[(size_t) i]); }
+            return e > 0 ? d / e : 0.0;
+        };
+        rough (0.0f);
+        const double plain = rough (0.0f), fm = rough (0.8f);
+        std::printf("      (roughness without FM %.3f, with audio in modulating B %.3f)\n", plain, fm);
+        CHECK (fm > plain * 1.2, "audio in can frequency-modulate another oscillator");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures ? "TESTS FAILED" : "ALL TESTS PASSED", failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;
 }
